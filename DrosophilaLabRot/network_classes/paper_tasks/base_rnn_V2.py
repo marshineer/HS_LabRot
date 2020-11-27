@@ -9,14 +9,14 @@ from network_classes.paper_tasks.common import *
 
 class FirstOrderCondRNN(nn.Module):
     def __init__(self, *, n_kc=200, n_mbon=20, n_fbn=60, n_ext=2, n_out=1,
-                 f_ones=0.1, n_seed=None, optimizer):
+                 f_ones=0.1, n_seed=None):
         super().__init__()
-        # Define the network optimizer
-        self.opti = optimizer
+
         # Set the seeds
         if n_seed is not None:
             np.random.seed(n_seed)
             torch.manual_seed(n_seed)
+
         # Set constants
         W_kc_mbon_max = 0.05
         self.kc_mbon_min = 0.  # Minimum synaptic weight
@@ -26,6 +26,7 @@ class FirstOrderCondRNN(nn.Module):
         self.tau_w = 5  # Time scale of KC->MBON LTD/LTP (plasticity)
         self.tau_r = 1  # Time scale of output circuitry activity
         self.n_int = 2  # Number of task intervals
+
         # Set the sizes of layers
         n_dan = n_mbon
         self.n_kc = n_kc
@@ -36,9 +37,30 @@ class FirstOrderCondRNN(nn.Module):
         self.n_ext = n_ext
         self.n_out = n_out
         self.n_ones = int(n_kc * f_ones)
+
         # Define network variables used to store data
+        # Odors
         self.train_odors = None
         self.eval_odors = None
+        # Training parameters (for continuation)
+        self.train_rts = None
+        self.train_Wts = None
+        self.train_wts = None
+        self.train_vts = None
+        self.train_vt_opts = None
+        self.train_CS_stim = None
+        self.train_US_stim = None
+        self.train_loss = None
+        # Evaluation parameters (for plotting and analysis)
+        self.eval_rts = None
+        self.eval_Wts = None
+        self.eval_wts = None
+        self.eval_vts = None
+        self.eval_vt_opts = None
+        self.eval_CS_stim = None
+        self.eval_US_stim = None
+        self.eval_loss = None
+
         # Define updatable network parameters
         sqrt2 = torch.sqrt(torch.tensor(2, dtype=torch.float))
         mean_mbon = torch.zeros((self.n_recur, n_mbon))
@@ -71,7 +93,7 @@ class FirstOrderCondRNN(nn.Module):
         DAN->MBON weights are permanently set to zero.
         DANs receive no external input.
 
-        Inputs
+        Parameters
             r_kc = activity of the Kenyon cell inputs (representing odors)
             r_ext = context inputs (representing the conditioning context)
             time = time vector for a single interval
@@ -110,8 +132,8 @@ class FirstOrderCondRNN(nn.Module):
         W_recur = self.W_recur.clone()
         W_recur[:self.n_mbon, -self.n_dan:] = 0
 
-        # Set the KC->MBON weights
-        W_kc_mbon, wt = W0
+        # Initialize the KC->MBON weights
+        # W_kc_mbon, wt = W0
         W_kc_mbon = [W0[0]]
         wt = [W0[1]]
 
@@ -207,8 +229,8 @@ class FirstOrderCondRNN(nn.Module):
 
         return prod1 - prod2
 
-    def train_net(self, *, T_int=30, T_stim=2, dt=0.5, n_epoch=5000, n_batch=30,
-                  clip=0.001, **kwargs):
+    def train_net(self, *, opti, T_int=30, T_stim=2, dt=0.5, n_epoch=5000,
+                  n_batch=30, clip=0.001, **kwargs):
         """ Trains a network on classical conditioning tasks.
 
         Tasks include first-order or second-order conditioning, and extinction.
@@ -257,6 +279,8 @@ class FirstOrderCondRNN(nn.Module):
             vts = []
 
             # Set the intial KC->MBON weight values for each trial
+            if W_kc_mbon is not None:
+                W_kc_mbon = (Wt[-1].detach(), wt[-1].detach())
             W_kc_mbon = self.init_w_kc_mbon(W_kc_mbon, n_batch, (epoch, n_epoch))
 
             # Generate odor (r_kc), context (r_ext), and target valence (vt_opt)
@@ -273,7 +297,7 @@ class FirstOrderCondRNN(nn.Module):
                 # W_kc_mbon = net_outs[1]
                 Wt = net_outs[1][0]
                 wt = net_outs[1][1]
-                W_kc_mbon = (Wt[-1].detach(), wt[-1].detach())
+                W_kc_mbon = (Wt[-1], wt[-1])
 
                 # Append the interval outputs to lists
                 r_outs += net_outs[0]
@@ -289,10 +313,10 @@ class FirstOrderCondRNN(nn.Module):
             loss = cond_loss(vt_epoch, vt_opt, r_out_epoch[:, -self.n_dan:, :])
 
             # Update the network parameters
-            self.opti.zero_grad()
+            opti.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters(), clip)
-            self.opti.step()
+            opti.step()
 
             # Print an update
             if epoch % 500 == 0:
@@ -454,25 +478,38 @@ class FirstOrderCondRNN(nn.Module):
 
         return r_kct_ls, r_extt_ls, vt_opt, ls_stims
 
-    def gen_r_kc_ext(self, n_batch):
-        """ Generates neuron activities for context and odor inputs.
+    def gen_r_kc_ext(self, n_batch, pos_val=None, **kwargs):
+        """ Generates neuron activations for context and odor inputs.
 
         Parameters
-            n_batch = number of trials in mini-batch
-
-        Returns
-            r_kc = odor (KC) inputs
-            r_ext = context (ext) inputs
+            n_batch = number of trials in eval-batch
+            pos_vt (kwarg) = indicates whether valence should be positive
+                             None: random valence
+                             True: positive valence
+                             False: negative valence
         """
 
-        # Conditioned stimuli (CS) = odors
+        # Determine the contextual input (r_ext)
+        if pos_val is None:
+            r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext),
+                                      self.n_ext)
+        elif pos_val:
+            r_ext = torch.tensor([1, 0]).repeat(n_batch, 1)
+        elif not pos_val:
+            r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
+        else:
+            print('Not a valid value for pos_val')
+
+        # Determine odor input (r_kc)
         r_kc = torch.zeros(n_batch, self.n_kc)
-        # n_ones = int(self.n_kc * 0.1)
         for b in range(n_batch):
             # Define an odor (CS) for each trial
-            r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
+            if self.train_odors is not None:
+                n_odors = self.train_odors.shape[0]
+                odor_select = torch.randint(n_odors, (1,))
+                r_kc_inds = self.train_odors[odor_select, :]
+            else:
+                r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
             r_kc[b, r_kc_inds] = 1
-        # Unconditioned stimuli (US) = context
-        r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
 
         return r_kc, r_ext

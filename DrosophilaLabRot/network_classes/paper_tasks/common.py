@@ -1,8 +1,11 @@
 # Import the required packages
+import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
 
+# TODO: Try to eliminate as many passed parameters as possible (eliminate n_natch?)
 def cond_loss(vt, vt_opt, r_DAN, lam=0.1):
     """ Calculates the loss for conditioning tasks.
 
@@ -59,6 +62,11 @@ def first_order_cond_csp(*, t_len, st_times, st_len, r_in, n_batch, p_ctrl=0.,
     n_kc = r_kc.shape[1]
     n_ext = r_ext.shape[1]
 
+    # TODO: Incorporate control trials into interval functions
+    #  How can I pass control trial info to the next interval?
+    #  eg. If the conditioning interval is a control, this must be know for
+    #  the test interval.
+    #  Do I need to do this, or can I just make separate 'train' functions?
     # # Determine whether CS or US are randomly omitted
     # omit_inds = torch.rand(n_batch) < p_ctrl
     # # If omitted, determine which one is omitted
@@ -89,7 +97,7 @@ def first_order_cond_csp(*, t_len, st_times, st_len, r_in, n_batch, p_ctrl=0.,
     # Combine the time matrices into a list
     stim_ls = [time_CS, time_US]
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_in, r_kct, r_extt, stim_ls, vt_opt
 
 
 def first_order_csm(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
@@ -106,6 +114,7 @@ def first_order_csm(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
         n_batch = number of trials in batch
     """
 
+    # TODO: Check for control trials
     # Set odors and context signals for each trial
     r_kc, r_ext = r_in
     n_kc = r_kc.shape[1]
@@ -132,7 +141,7 @@ def first_order_csm(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
     # Combine the time matrices into a list
     stim_ls = [time_CS, time_US]
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_in, r_kct, r_extt, stim_ls, vt_opt
 
 
 def second_order_cond(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
@@ -153,9 +162,6 @@ def second_order_cond(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
     # Initialize a second odor
     r_kc2 = torch.zeros_like(r_kc1)
     n_ones = r_kc1.shape[1]
-    # r_kc2, _ = self.gen_r_kc_ext(n_batch, **kwargs)
-    # if not self.static_odors:
-    #     self.eval_odors.append([r_kc1, r_kc2])
 
     # Initialize stimulus time matrices
     time_CS1 = torch.zeros(n_batch, t_len)
@@ -185,10 +191,11 @@ def second_order_cond(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
                           time_US.repeat(n_ext, 1, 1))
 
     # Combine the time matrices into a list
-    time_all_CS = torch.stack((time_CS1, time_CS2), dim=0)
+    time_all_CS = [time_CS1, time_CS2]
     stim_ls = [time_all_CS, time_US]
+    r_next = ([r_kc1, r_kc2], r_ext)
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_next, r_kct, r_extt, stim_ls, vt_opt
 
 
 def classic_cond_test(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
@@ -205,6 +212,12 @@ def classic_cond_test(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
         n_batch = number of trials in batch
     """
 
+    # TODO: Check how many odors are being passed. Only need the first.
+    #  Look into this for all interval functions. What combinations of passing
+    #  odors are there?
+    #  eg. For the second order test, I need to check the r_kc2, NOT r_kc1.
+    #  Therefore, maybe 2nd-order test needs its own function? Add an extra input
+    #  to indicate which odor from r_in is relevant?
     # Set odors and context signals for each trial
     r_kc, r_ext = r_in
     n_kc = r_kc.shape[1]
@@ -236,7 +249,7 @@ def classic_cond_test(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
     # Combine the time matrices into a list
     stim_ls = [time_CS, time_US]
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_in, r_kct, r_extt, stim_ls, vt_opt
 
 
 def extinct_test(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
@@ -285,7 +298,7 @@ def extinct_test(*, t_len, st_times, st_len, r_in, n_batch, **kwargs):
     # Combine the time matrices into a list
     stim_ls = [time_CS, time_US]
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_in, r_kct, r_extt, stim_ls, vt_opt
 
 
 def no_plasticity_trial(*, t_len, st_times, st_len, r_in, n_batch, dt,
@@ -355,10 +368,11 @@ def no_plasticity_trial(*, t_len, st_times, st_len, r_in, n_batch, dt,
                           time_US.repeat(n_ext, 1, 1))
 
     # Combine the time matrices into a list
-    time_all_CS = torch.stack((time_CS1, time_CS2), dim=0)
+    time_all_CS = [time_CS1, time_CS2]
     stim_ls = [time_all_CS, time_US]
+    r_next = ([r_kc1, r_kc2], r_ext)
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_next, r_kct, r_extt, stim_ls, vt_opt
 
 
 def continual_trail(*, t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
@@ -382,10 +396,11 @@ def continual_trail(*, t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
     n_kc = r_kc1.shape[1]
     n_ext = r_ext1.shape[1]
     # Initialize matrices to store additional odors and their context signals
-    r_kcs = torch.zeros(n_odor, r_kc1.shape[0], r_kc1.shape[1])
-    r_kcs[0, :, :] = r_kc1
-    r_exts = torch.zeros(n_odor, r_ext1.shape[0], r_ext1.shape[1])
-    r_exts[0, :, :] = r_ext1
+    r_kcs = [0] * n_odor
+    r_kcs[0] = r_kc1
+    r_exts = [0] * n_odor
+    # TODO: r_ext1 should be positive
+    r_exts[0] = r_ext1
 
     # Initialize activity matrices
     r_kct = torch.zeros(n_batch, n_kc, t_len)
@@ -403,9 +418,13 @@ def continual_trail(*, t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
         for b in range(n_batch):
             # Generate new odors
             if i > 0:
+                # TODO: r_ext should be positive for the first odor, negative
+                #  for the second odor and zero for any following odors
+                r_kcs[i] = torch.zeros_like(r_kc1)
+                r_exts[i] = torch.zeros_like(r_ext1)
                 new_kc_inds = torch.multinomial(torch.ones(n_kc), n_kc)
-                r_kcs[i, b, :] = r_kc1[b, new_kc_inds]
-                r_exts[i, b, :] = torch.multinomial(torch.ones(n_ext), n_ext)
+                r_kcs[i][b, :] = r_kc1[b, new_kc_inds]
+                r_exts[i][b, :] = torch.multinomial(torch.ones(n_ext), n_ext)
 
             for j, st in enumerate(st_times[i][b]):
                 # Convert stimulus time into range of indices
@@ -418,15 +437,15 @@ def continual_trail(*, t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
                     time_US_odor[b, (stim_inds + st_len)] = 1
                     # Set target valence on each presentation after the first
                     if j > 0:
-                        if r_exts[i, b, 0] == 1:
+                        if r_exts[i][b, 0] == 1:
                             vt_opt[b, (stim_inds + 1)] = 1
                         else:
                             vt_opt[b, (stim_inds + 1)] = -1
 
         # Calculate the input neuron activity time series (KC = CS, ext = US)
-        r_kct += torch.einsum('bm, mbt -> bmt', r_kcs[i, :, :],
+        r_kct += torch.einsum('bm, mbt -> bmt', r_kcs[i],
                               time_CS_odor.repeat(n_kc, 1, 1))
-        r_extt += torch.einsum('bm, mbt -> bmt', r_exts[i, :, :],
+        r_extt += torch.einsum('bm, mbt -> bmt', r_exts[i],
                                time_US_odor.repeat(n_ext, 1, 1))
 
         # Save the CS and US stimuli time series
@@ -435,8 +454,9 @@ def continual_trail(*, t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
 
     # Combine the time matrices into a list
     stim_ls = [time_CS, time_US]
+    r_next = (r_kcs, r_exts)
 
-    return r_kct, r_extt, stim_ls, vt_opt
+    return r_next, r_kct, r_extt, stim_ls, vt_opt
 
 
 def gen_st_times(dt, n_batch, T_stim=2, T_range=(5, 15), **kwargs):
@@ -508,3 +528,62 @@ def gen_cont_times(dt, n_batch, T_stim=2, T_int=200, stim_mean=2, n_odor=4,
         st_times[b] = batch_times
 
     return st_times, st_len
+
+
+def print_trial(network, plt_ttl: str, dt=0.5):
+    """ Plots a figure similar to Figure 2 from Jiang 2020.
+
+    Runs the network using a novel combination of stimuli, then prints the
+    result. Top: time series of the various stimuli (CS and US), as well as
+    the target valence and readout. Bottom: activity of eight randomly chosen
+    mushroom body output neurons (MBONs).
+
+    Paramters
+        network = previously trained RNN
+        plt_ttl = title of plot
+        dt = time step of the simulation/plot
+    """
+
+    # Define plot font sizes
+    label_font = 18
+    title_font = 24
+    legend_font = 12
+
+    # Run the network
+    r_out, vt, vt_opt, loss_hist, stim_ls = network.train_net(n_epoch=1, n_batch=1, p_ctrl=0)
+    r_out = r_out.detach().numpy().squeeze()
+    vt = vt.detach().numpy().squeeze()
+    vt_opt = vt_opt.detach().numpy().squeeze()
+    plot_CS = stim_ls[0].numpy().squeeze()
+    plot_US = stim_ls[1].numpy().squeeze()
+    plot_time = np.arange(plot_CS.size) * dt
+
+    # Determine plot labels
+    n_CS = plot_CS.shape[0]
+    CS_labels = []
+    for i in range(n_CS):
+        pass
+    # Plot the conditioning and test
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), sharex=True,
+                                   gridspec_kw={'height_ratios': [1, 4]})
+    ax1.plot(plot_time, vt, label='Readout')
+    ax1.plot(plot_time, vt_opt, label='Target')
+    ax1.plot(plot_time, plot_CS, label='CS+')
+    # Second-order conditioning involves an additional stimulus time series
+    for i in range(plot_CS.shape[0]):
+        plot_CS2 = stim_ls[2].numpy().squeeze()
+        ax1.plot(plot_time, plot_CS2, label='CS2')
+    ax1.plot(plot_time, plot_US, label='US')
+    ax1.set_ylabel('Value', fontsize=label_font)
+    ax1.set_title(plt_ttl, fontsize=title_font)
+    ax1.legend(fontsize=legend_font)
+
+    # Plot the activities of a few MBONs
+    plot_neurs = np.random.choice(network.N_MBON, size=8, replace=False)
+    r_max = np.max(r_out)
+    for i, n in enumerate(plot_neurs):
+        ax2.plot(plot_time, (r_out[n, :] / r_max) + (i * 2 / 3), '-k')
+    ax2.set_xlabel('Time', fontsize=label_font)
+    ax2.set_ylabel('Normalized Activity', fontsize=label_font)
+    ax2.set_yticks([])
+    fig.tight_layout();

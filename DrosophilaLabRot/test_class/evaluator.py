@@ -82,29 +82,19 @@ class RunNetwork:
             if reset_wts:
                 W_in = self.net.init_w_kc_mbon(self, W_in, n_batch,
                                                (tr, n_trials))
-            # else:
-            #     # Wt0 = (self.eval_Wts[-1][:, :, :, -1])
-            #     # wt0 = (self.eval_wts[-1][:, :, :, -1])
-            #     # W_in = (Wt0, wt0)
-            #     W_in = (Wt_int[-1].detach(), wt_int[-1].detach())
+
+            # Generate odors and context (odor = KC = CS, context = ext = US)
+            r_in = self.gen_r_kc_ext(n_batch, **kwargs)
 
             for i in range(len(trial_ls)):
                 # Calculate the CS stimulus presentation times
-                st_times, st_len = self.gen_st_times(dt, n_batch, **kwargs)
-
-                # Generate odors and context (odor = KC = CS, context = ext = US)
-                r_in = self.gen_r_kc_ext(n_batch, **kwargs)
-                # r_kc, r_ext = self.gen_r_kc_ext(n_batch, **kwargs)
-                if not self.static_odors:
-                    # self.eval_odors.append(r_kc)
-                    self.eval_odors.append(r_in[0])
-                # r_in = (r_kc, r_ext)
+                st_times, st_len = gen_st_times(dt, n_batch, **kwargs)
 
                 # Select the interval function to run
                 int_fnc = trial_ls[i]
                 # Calculate the interval inputs
                 f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch, **kwargs)
-                r_kct, r_extt, stim_ls, vt_opt = f_in
+                r_in, r_kct, r_extt, stim_ls, vt_opt = f_in
 
                 # Run the forward pass
                 net_out = self.net(r_kct, r_extt, time_int, n_batch, W_in)
@@ -121,7 +111,7 @@ class RunNetwork:
                 time_CS += stim_ls[0]
                 time_US += stim_ls[1]
 
-            # Concatenate the activities, weights and valences
+            # Save all the relevant variables
             self.eval_rts.append(torch.stack(rts, dim=-1).detach())
             self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
             self.eval_wts.append(torch.stack(wts, dim=-1).detach())
@@ -129,6 +119,7 @@ class RunNetwork:
             self.eval_vt_opts.append(torch.stack(vts, dim=-1).detach())
             self.eval_CS_stim.append(torch.stack(time_CS, dim=-1).detach())
             self.eval_US_stim.append(torch.stack(time_US, dim=-1).detach())
+            self.eval_odors.append(r_in[0])
 
             # Calculate the loss
             loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
@@ -161,9 +152,10 @@ class RunNetwork:
         r_kc = torch.zeros(n_batch, self.n_kc)
         for b in range(n_batch):
             # Define an odor (CS) for each trial
-            if self.static_odors is not None:
-                odor_select = self.static_odors.shape[0]
-                r_kc_inds = self.eval_odors[odor_select, :]
+            if self.net.train_odors is not None:
+                n_odors = self.net.train_odors.shape[0]
+                odor_select = torch.randint(n_odors, (1,))
+                r_kc_inds = self.net.train_odors[odor_select, :]
             else:
                 r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
             r_kc[b, r_kc_inds] = 1

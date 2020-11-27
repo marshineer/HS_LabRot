@@ -180,25 +180,25 @@ class NoPlasticityRNN(FirstOrderCondRNN):
 
         return [r_kct], [r_extt], vt_opt, ls_stims
 
-    def gen_r_kc_ext(self, n_batch):
-        """ Generates neuron activities for context and odor inputs.
-
-        Parameters
-            n_batch = number of trials in mini-batch
-
-        Returns
-            r_kc = odor (KC) inputs
-            r_ext = context (ext) inputs
-        """
-
-        # Conditioned stimuli (CS) = odors
-        odor_select = torch.multinomial(torch.ones(self.n_train_odors),
-                                        n_batch, replacement=True)
-        r_kc = torch.zeros(n_batch, self.n_kc)
-        for b in range(n_batch):
-            # Define an odor (CS) for each trial
-            r_kc[b, :] = self.train_odors[odor_select[b], :]
-        # Unconditioned stimuli (US) = context
-        r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
-
-        return r_kc, r_ext
+    # def gen_r_kc_ext(self, n_batch):
+    #     """ Generates neuron activities for context and odor inputs.
+    #
+    #     Parameters
+    #         n_batch = number of trials in mini-batch
+    #
+    #     Returns
+    #         r_kc = odor (KC) inputs
+    #         r_ext = context (ext) inputs
+    #     """
+    #
+    #     # Conditioned stimuli (CS) = odors
+    #     odor_select = torch.multinomial(torch.ones(self.n_train_odors),
+    #                                     n_batch, replacement=True)
+    #     r_kc = torch.zeros(n_batch, self.n_kc)
+    #     for b in range(n_batch):
+    #         # Define an odor (CS) for each trial
+    #         r_kc[b, :] = self.train_odors[odor_select[b], :]
+    #     # Unconditioned stimuli (US) = context
+    #     r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
+    #
+    #     return r_kc, r_ext

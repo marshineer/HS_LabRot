@@ -7,8 +7,6 @@ from network_classes.paper_tasks.base_rnn_V2 import FirstOrderCondRNN
 classic_net = FirstOrderCondRNN()
 for param in classic_net.parameters():
     print(param.shape)
-#     print(param)
-# print(classic_net.N_DAN)
 
 # Define the model's optimizer
 lr = 0.001

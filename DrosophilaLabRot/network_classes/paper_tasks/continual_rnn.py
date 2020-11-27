@@ -176,6 +176,10 @@ class ContinualRNN(FirstOrderCondRNN):
             #                           self.N_ext)
             # Generate odors and context signals for each trial
             r_kc, r_ext = self.gen_r_kc_ext(n_batch)
+            if i < (self.n_trial_odors / 4):
+                r_ext = torch.tensor([1, 0]).repeat(n_batch, 1)
+            if (self.n_trial_odors / 4) < i < (self.n_trial_odors / 2):
+                r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
 
             # For each trial
             for b in range(n_batch):
