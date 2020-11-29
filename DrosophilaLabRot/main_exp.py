@@ -1,7 +1,7 @@
 import numpy as np
 import torch.optim as optim
 import matplotlib.pyplot as plt
-from network_classes.not_used.base_rnn_V2 import FirstOrderCondRNN
+from not_used.base_rnn_V2 import FirstOrderCondRNN
 
 # Initialize the network
 classic_net = FirstOrderCondRNN()
