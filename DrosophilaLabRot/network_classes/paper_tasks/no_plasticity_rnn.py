@@ -1,7 +1,8 @@
 # Import the required packages
-import torch
+# import torch
 from torch.autograd import Variable
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
+from network_classes.paper_tasks.common import *
 
 
 class NoPlasticityRNN(FirstOrderCondRNN):
@@ -35,48 +36,10 @@ class NoPlasticityRNN(FirstOrderCondRNN):
             n_batch = number of trials in mini-batch
         """
 
-        return W_kc_mbon, wt, r_bar_kc, r_bar_dan
+        return r_bar_kc, r_bar_dan
 
-    def gen_stim_times(self, T_stim, T_int, dt, n_epoch, n_batch):
-        """ Generates an array of stimulus presentation times for all trials
-
-        Parameters
-            T_stim = length of time each stimulus is presented
-            T_int = length of task intervals
-            dt = time step of simulations
-            n_epoch = number of epochs to train over
-            n_batch = number of trials in mini-batch
-
-        Returns
-            Array of stimulus presentation times
-        """
-
-        # Present the stimuli between 5-15s and 20-30s of the interval
-        stim_min1 = 5
-        stim_max1 = 15 - T_stim
-        stim_range1 = int((stim_max1 - stim_min1) / dt)
-        stim_offset1 = int(stim_min1 / dt)
-        stim_min2 = 20
-        stim_max2 = 30 - T_stim
-        stim_range2 = int((stim_max2 - stim_min2) / dt)
-        stim_offset2 = int(stim_min2 / dt)
-
-        # Initialize stimulus presentation times array
-        stim_times = torch.zeros(n_epoch, n_batch, 2)
-
-        for i in range(n_batch):
-            # Randomly determine the time of each stimulus presentation
-            stim_times[:, i, 0] = torch.multinomial(torch.ones(stim_range1),
-                                                    n_epoch, replacement=True)
-            stim_times[:, i, 0] += stim_offset1
-            stim_times[:, i, 1] = torch.multinomial(torch.ones(stim_range2),
-                                                    n_epoch, replacement=True)
-            stim_times[:, i, 1] += stim_offset2
-
-        return stim_times
-
-    def gen_inputs(self, stim_times, stim_len, time_len, n_batch, **kwargs):
-        """ Generates inputs for first-order conditioning tasks.
+    def gen_inputs(self, T_vars, n_batch, **kwargs):
+        """ Generates inputs for task without KC->MBON plasticity.
 
         All trials are CS+ or control trials where CS+ is switched out for a
         neutral CS in the second presentation (CS- trials). In the case where the
@@ -88,9 +51,11 @@ class NoPlasticityRNN(FirstOrderCondRNN):
             probability of trials where CS+ is switched = 0.5
 
         Parameters
-            stim_times = indices of stimulus presentations for each interval
-            stim_len = length of stimulus presentation (in indices)
-            time_len = size of time vector
+            T_vars: Tuple
+                T_vars[0] = T_int = length of trial (in seconds)
+                T_vars[1] = T_stim = length of time each stimulus is presented
+                T_vars[2] = dt = time step of simulations
+                T_vars[3] = time_len = size of time vector
             n_batch = number of trials in mini-batch
             p_omit = probability of omitting either CS or US from trials
 
@@ -101,34 +66,11 @@ class NoPlasticityRNN(FirstOrderCondRNN):
             ls_stims = stimulus time series for plotting
         """
 
-        # Set stimulus presentation time dtype
-        stim_times = stim_times.int()
+        # Set the range over which stimuli can be presented
+        T_range = [(5, 15), (20, 30)]
+        # Set the time variables
+        T_stim, dt, time_len = T_vars[1:]
 
-        # # Define a set of 10 odors (CS)
-        # # n_ones = int(self.n_kc * 0.1)
-        # if self.train_odors is None:
-        #     # odor_list = torch.zeros(self.n_train_odors, self.n_kc)
-        #     # odor_inds = torch.multinomial(torch.ones(self.n_train_odors,
-        #     #                                          self.n_kc), self.n_ones)
-        #     # for n in range(self.n_train_odors):
-        #     #     # Define an odor (CS)
-        #     #     odor_list[n, odor_inds[n, :]] = 1
-        #     # self.train_odors = odor_list
-        #
-        #     # odor_list = torch.zeros(self.n_train_odors, self.n_kc)
-        #     odor_inds = torch.multinomial(torch.ones(self.n_train_odors,
-        #                                              self.n_kc), self.n_ones)
-        #     self.train_odors = odor_inds
-
-        # # Conditioned stimuli (CS) = odors
-        # odor_select = torch.multinomial(torch.ones(self.n_train_odors),
-        #                                 n_batch, replacement=True)
-        # r_kc = torch.zeros(n_batch, self.N_kc)
-        # for b in range(n_batch):
-        #     # Define an odor (CS) for each trial
-        #     r_kc[b, :] = self.train_odors[odor_select[b], :]
-        # # Unconditioned stimuli (US) = context
-        # r_ext = torch.multinomial(torch.ones(n_batch, self.N_ext), self.N_ext)
         # Generate odors and context signals for each trial
         r_kc, r_ext = self.gen_r_kc_ext(n_batch)
 
@@ -147,13 +89,16 @@ class NoPlasticityRNN(FirstOrderCondRNN):
             # Initialize time matrices
             time_CS = torch.zeros(n_batch, time_len)
 
+            # Calculate the stimulus presentation times and length
+            st_times, st_len = gen_int_times(n_batch, dt, T_stim, T_range[i])
+
             for b in range(n_batch):
-                stim_inds = stim_times[b, i] + torch.arange(stim_len)
+                stim_inds = st_times[b] + torch.arange(st_len)
                 # Set the CS time
                 time_CS[b, stim_inds] = 1
                 # Set the US time
                 if i == 0:
-                    time_US[b, stim_inds + stim_len] = 1
+                    time_US[b, stim_inds + st_len] = 1
                 # Set the CS+/CS2 and target valence times
                 if i == 1:
                     # Switch the odor in half the trials (target valence is zero)
@@ -179,26 +124,3 @@ class NoPlasticityRNN(FirstOrderCondRNN):
         ls_stims = [time_CS_both, time_US]
 
         return [r_kct], [r_extt], vt_opt, ls_stims
-
-    # def gen_r_kc_ext(self, n_batch):
-    #     """ Generates neuron activities for context and odor inputs.
-    #
-    #     Parameters
-    #         n_batch = number of trials in mini-batch
-    #
-    #     Returns
-    #         r_kc = odor (KC) inputs
-    #         r_ext = context (ext) inputs
-    #     """
-    #
-    #     # Conditioned stimuli (CS) = odors
-    #     odor_select = torch.multinomial(torch.ones(self.n_train_odors),
-    #                                     n_batch, replacement=True)
-    #     r_kc = torch.zeros(n_batch, self.n_kc)
-    #     for b in range(n_batch):
-    #         # Define an odor (CS) for each trial
-    #         r_kc[b, :] = self.train_odors[odor_select[b], :]
-    #     # Unconditioned stimuli (US) = context
-    #     r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
-    #
-    #     return r_kc, r_ext

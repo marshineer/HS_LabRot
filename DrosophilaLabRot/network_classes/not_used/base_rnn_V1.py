@@ -1,17 +1,16 @@
 # Import the required packages
-# import numpy as np
-# import torch
+import numpy as np
+import torch
 import torch.nn as nn
 from torch.autograd import Variable
-# import torch.nn.functional as F
-from network_classes.paper_tasks.common import *
+import torch.nn.functional as F
+from network_classes.paper_tasks.common import cond_loss
 
 
 class FirstOrderCondRNN(nn.Module):
     def __init__(self, *, n_kc=200, n_mbon=20, n_fbn=60, n_ext=2, n_out=1,
                  f_ones=0.1, n_seed=None):
         super().__init__()
-
         # Set the seeds
         if n_seed is not None:
             np.random.seed(n_seed)
@@ -93,7 +92,7 @@ class FirstOrderCondRNN(nn.Module):
         DAN->MBON weights are permanently set to zero.
         DANs receive no external input.
 
-        Parameters
+        Inputs
             r_kc = activity of the Kenyon cell inputs (representing odors)
             r_ext = context inputs (representing the conditioning context)
             time = time vector for a single interval
@@ -132,15 +131,14 @@ class FirstOrderCondRNN(nn.Module):
         W_recur = self.W_recur.clone()
         W_recur[:self.n_mbon, -self.n_dan:] = 0
 
-        # Initialize the KC->MBON weights
-        W_kc_mbon = [W0[0]]
-        wt = [W0[1]]
+        # Set the KC->MBON weights
+        W_kc_mbon, wt = W0
 
         # Update activity for each time step
         for t in range(time.shape[0] - 1):
             # Define the input to the output circuitry
             I_kc_mbon = torch.einsum('bmk, bk -> bm',
-                                     W_kc_mbon[-1], r_kc[:, :, t])
+                                     W_kc_mbon, r_kc[:, :, t])
             I_fbn = torch.einsum('bfe, be -> bf',
                                  self.W_ext.repeat(n_batch, 1, 1),
                                  r_ext[:, :, t])
@@ -157,18 +155,17 @@ class FirstOrderCondRNN(nn.Module):
             r_recur.append(r_recur[-1] + dr * dt)
 
             # Update KC->MBON plasticity variables
-            wt_out = self.wt_update(W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan,
-                                    r_kc[:, :, t], r_recur[-1][:, -self.n_dan:],
-                                    n_batch, **kwargs)
-            # W_kc_mbon, wt, r_bar_kc, r_bar_dan = out
-            r_bar_kc, r_bar_dan = wt_out
+            out = self.wt_update(W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan,
+                                 r_kc[:, :, t], r_recur[-1][:, -self.n_dan:],
+                                 n_batch, **kwargs)
+            W_kc_mbon, wt, r_bar_kc, r_bar_dan = out
 
             # Calculate the readout (see Eq. 2)
             readout.append(torch.einsum('bom, bm -> bo',
                                         self.W_readout.repeat(n_batch, 1, 1),
                                         r_recur[-1][:, :self.n_mbon]).squeeze())
 
-        return r_recur, (W_kc_mbon, wt), readout
+        return r_recur, (W_kc_mbon.detach(), wt.detach()), readout
 
     def wt_update(self, W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan, r_kc, r_dan,
                   n_batch, **kwargs):
@@ -196,15 +193,14 @@ class FirstOrderCondRNN(nn.Module):
         r_bar_dan = r_bar_dan + (r_dan - r_bar_dan) * dt / self.tau_w
         # Update the dynamic weight variable
         dw = self.calc_dw(r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, **kwargs)
-        wt.append(wt[-1] + dw * dt)
+        wt += dw * dt
         # Update the KC->MBON weights (see Eq. 8)
-        dW = (-W_kc_mbon[-1] + wt[-1]) / self.tau_w
-        W_tp1 = W_kc_mbon[-1] + dW * dt
+        dW = (-W_kc_mbon + wt) / self.tau_w
+        W_tp1 = W_kc_mbon + dW * dt
         # Clip the KC->MBON weights to the range [0, 0.05]
-        W_kc_mbon.append(torch.clamp(W_tp1, self.kc_mbon_min, self.kc_mbon_max))
+        W_kc_mbon = torch.clamp(W_tp1, self.kc_mbon_min, self.kc_mbon_max)
 
-        # return W_kc_mbon, wt, r_bar_kc, r_bar_dan
-        return r_bar_kc, r_bar_dan
+        return W_kc_mbon, wt, r_bar_kc, r_bar_dan
 
     def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, **kwargs):
         """ Calculates the dynamic weight update (see Eq 4).
@@ -226,8 +222,8 @@ class FirstOrderCondRNN(nn.Module):
 
         return prod1 - prod2
 
-    def run_train(self, *, opti, T_int=30, T_stim=2, dt=0.5, n_epoch=5000,
-                  n_batch=30, reset_wts=True, clip=0.001, **kwargs):
+    def train_net(self, *, opti, T_int=30, T_stim=2, dt=0.5, n_epoch=5000,
+                  n_batch=30, clip=0.001, **kwargs):
         """ Trains a network on classical conditioning tasks.
 
         Tasks include first-order or second-order conditioning, and extinction.
@@ -244,7 +240,6 @@ class FirstOrderCondRNN(nn.Module):
             dt = time step of simulations
             n_epoch = number of epochs to train over
             n_batch = number of trials in mini-batch
-            reset_wts = indicates whether to reset weights between trials
             clip = maximum gradient allowed during training
 
         Returns
@@ -256,49 +251,54 @@ class FirstOrderCondRNN(nn.Module):
             ls_stims = list of stimulus time series for plotting
         """
 
-        # Interval time vector and time variables
+        # Interval time vector
         time_int = torch.arange(0, T_int + dt / 10, dt)
-        T_vars = (T_int, T_stim, dt, time_int.shape[0])
+
+        # Generate a list of stimulus presentation times
+        stim_times = self.gen_stim_times(T_stim, T_int, dt, n_epoch, n_batch)
+        # Length of stimulus in indices
+        stim_len = int(T_stim / dt)
 
         # List to store losses
         loss_hist = []
 
         # Initialize the KC-MBON weights
-        W_in = None
+        W_kc_mbon = None
 
         for epoch in range(n_epoch):
             # Lists to store activities, weights, readouts and target valences
-            rts = []
+            r_outs = []
+            # Wts = []
             vts = []
 
             # Set the intial KC->MBON weight values for each trial
-            if reset_wts or (W_in is None):
-                W_in = self.init_w_kc_mbon(None, n_batch, (epoch, n_epoch))
-            else:
-                W_in = (W_in[0][-1].detach(), W_in[1][-1].detach())
+            W_kc_mbon = self.init_w_kc_mbon(W_kc_mbon, n_batch, (epoch, n_epoch))
 
             # Generate odor (r_kc), context (r_ext), and target valence (vt_opt)
-            net_inputs = self.gen_inputs(T_vars, n_batch, **kwargs)
+            st_epoch = stim_times[epoch]
+            net_inputs = self.gen_inputs(st_epoch, stim_len, time_int.shape[0],
+                                         n_batch, **kwargs)
             r_kc, r_ext, vt_opt, ls_stims = net_inputs
 
             # For each interval in the task
             for i in range(self.n_int):
                 # Run the forward model
-                net_out = self(r_kc[i], r_ext[i], time_int, n_batch, W_in)
-                rt_int, (Wt_int, wt_int), vt_int = net_out
-                # Pass the KC->MBON weights to the next interval
-                W_in = (Wt_int[-1], wt_int[-1])
+                net_outs = self(r_kc[i], r_ext[i], time_int, n_batch, W_kc_mbon)
+                # Set the initial KC->MBON weights for the next interval
+                W_kc_mbon = net_outs[1]
 
                 # Append the interval outputs to lists
-                rts += rt_int
-                vts += vt_int
+                r_outs += net_outs[0]
+                # Wts += net_outs[1][0]
+                vts += net_outs[2]
 
             # Concatenate the activities, weights and valences
-            rt_epoch = torch.stack(rts, dim=-1)
+            r_out_epoch = torch.stack(r_outs, dim=-1)
+            # Wt_epoch = torch.stack(Wts, dim=-1)
             vt_epoch = torch.stack(vts, dim=-1)
 
             # Calculate the loss
-            loss = cond_loss(vt_epoch, vt_opt, rt_epoch[:, -self.n_dan:, :])
+            loss = cond_loss(vt_epoch, vt_opt, r_out_epoch[:, -self.n_dan:, :])
 
             # Update the network parameters
             opti.zero_grad()
@@ -311,15 +311,16 @@ class FirstOrderCondRNN(nn.Module):
                 print(epoch, loss.item())
             loss_hist.append(loss.item())
 
-        return loss_hist
+        # return r_out_epoch, Wt_epoch, vt_epoch, vt_opt, loss_hist, ls_stims
+        return r_out_epoch, vt_epoch, vt_opt, loss_hist, ls_stims
 
-    def init_w_kc_mbon(self, W_in, n_batch, e_tup):
+    def init_w_kc_mbon(self, W0, n_batch, e_tup):
         """ Initializes the KC->MBON weights for the task.
 
         KC->MBON weights are reset at the beginning of each epoch.
 
         Parameters
-            W_in = specified initial weight values or None
+            W0 = specified initial weight values or None
             n_batch = number of trials in mini-batch
             e_tup: tuple = (current epoch, total training epochs)
 
@@ -327,13 +328,43 @@ class FirstOrderCondRNN(nn.Module):
             tuple of initial KC->MBON and dynamic plasticity variables
         """
 
-        if W_in is None:
-            wt0 = self.W_kc_mbon_0.repeat(n_batch, 1, 1)
-            W_in = (wt0.clone(), wt0.clone())
+        wt0 = self.W_kc_mbon_0.repeat(n_batch, 1, 1)
 
-        return W_in
+        return wt0.clone(), wt0.clone()
 
-    def gen_inputs(self, T_vars, n_batch, p_omit=0.3):
+    def gen_stim_times(self, T_stim, T_int, dt, n_epoch, n_batch):
+        """ Generates an array of stimulus presentation times for all trials
+
+        Parameters
+            T_stim = length of time each stimulus is presented
+            T_int = length of task intervals
+            dt = time step of simulations
+            n_epoch = number of epochs to train over
+            n_batch = number of trials in mini-batch
+
+        Returns
+            Array of stimulus presentation times
+        """
+
+        # Present the stimulus between 5-15s of each interval
+        stim_min = 5
+        stim_max = 15 - T_stim
+        stim_range = int((stim_max - stim_min) / dt)
+        stim_wts = torch.ones(n_epoch, stim_range)
+        stim_offset = int(stim_min / dt)
+
+        # Initialize stimulus presentation times array
+        stim_times = torch.zeros(n_epoch, n_batch, self.n_int)
+
+        for i in range(self.n_int):
+            # Randomly determine the time of each stimulus presentation
+            stim_times[:, :, i] = torch.multinomial(stim_wts, n_batch,
+                                                    replacement=True)
+            stim_times[:, :, i] += stim_offset
+
+        return stim_times
+
+    def gen_inputs(self, stim_times, stim_len, time_len, n_batch, p_omit=0.3):
         """ Generates inputs for first-order conditioning tasks.
 
         All trials are either CS+, CS- (US omitted) or CS omitted (control trials
@@ -350,11 +381,9 @@ class FirstOrderCondRNN(nn.Module):
             probability of control trials = p_omit * 0.7
 
         Parameters
-            T_vars: Tuple
-                T_vars[0] = T_int = length of trial (in seconds)
-                T_vars[1] = T_stim = length of time each stimulus is presented
-                T_vars[2] = dt = time step of simulations
-                T_vars[3] = time_len = size of time vector
+            stim_times = indices of stimulus presentations for each interval
+            stim_len = length of stimulus presentation (in indices)
+            time_len = size of time vector
             n_batch = number of trials in mini-batch
             p_omit = probability of omitting either CS or US from trials
 
@@ -365,11 +394,17 @@ class FirstOrderCondRNN(nn.Module):
             ls_stims = stimulus time series for plotting
         """
 
-        # Set the range over which stimuli can be presented
-        T_range = (5, 15)
-        # Set the time variables
-        T_stim, dt, time_len = T_vars[1:]
+        # Set stimulus presentation time dtype
+        stim_times = stim_times.int()
 
+        # # Conditioned stimuli (CS) = odors
+        # r_kc = torch.zeros(n_batch, self.n_kc)
+        # for b in range(n_batch):
+        #     # Define an odor (CS) for each trial
+        #     r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
+        #     r_kc[b, r_kc_inds] = 1
+        # # Unconditioned stimuli (US) = context
+        # r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
         # Generate odors and context signals for each trial
         r_kc, r_ext = self.gen_r_kc_ext(n_batch)
 
@@ -395,17 +430,14 @@ class FirstOrderCondRNN(nn.Module):
             time_US = torch.zeros_like(time_CS)
             val_int = torch.zeros_like(time_CS)
 
-            # Calculate the stimulus presentation times and length
-            st_times, st_len = gen_int_times(n_batch, dt, T_stim, T_range)
-
             for b in range(n_batch):
-                stim_inds = st_times[b] + torch.arange(st_len)
+                stim_inds = stim_times[b, i] + torch.arange(stim_len)
                 # Set the CS input times
                 if not omit_CS_inds[b]:
                     time_CS[b, stim_inds] = 1
                 # Set the US input times
                 if i == 0 and not omit_US_inds[b]:
-                    time_US[b, (stim_inds + st_len)] = 1
+                    time_US[b, (stim_inds + stim_len)] = 1
                 # Set the target valence times
                 if i == 1 and not omit_inds[b]:
                     if r_ext[b, 0] == 1:
@@ -433,133 +465,25 @@ class FirstOrderCondRNN(nn.Module):
 
         return r_kct_ls, r_extt_ls, vt_opt, ls_stims
 
-    def run_eval(self, *, trial_ls, T_int=30, dt=0.5, n_batch=1, n_trial=1,
-                 reset_wts=True, **kwargs):
-        """ Runs an evaluation based on a series of input functions
+    def gen_r_kc_ext(self, n_batch):
+        """ Generates neuron activities for context and odor inputs.
 
         Parameters
-            trial_ls = list of interval functions that compose a trial
-            T_int = length of a task interval (in seconds)
-            dt = time step of simulation (in seconds)
-            n_batch = number of parallel trials in a batch
-            n_trials = number of trials to run
-            reset_wts = indicates whether to reset weights between trials
+            n_batch = number of trials in mini-batch
+
+        Returns
+            r_kc = odor (KC) inputs
+            r_ext = context (ext) inputs
         """
 
-        # Reset lists storing evaluation data
-        self.eval_rts = []
-        self.eval_Wts = []
-        self.eval_wts = []
-        self.eval_vts = []
-        self.eval_vt_opts = []
-        self.eval_CS_stim = []
-        self.eval_US_stim = []
-        self.eval_loss = []
-
-        # Interval time vector
-        time_int = torch.arange(0, T_int + dt / 10, dt)
-        t_len = time_int.shape[0]
-
-        # Initialize the KC-MBON weights and plasticity variable
-        W_in = None
-
-        # For each function in the list, run an interval
-        # All intervals together compose a single trial
-        for trial in range(n_trial):
-            # Lists to store activities, weights, readouts and target valences
-            rts = []
-            Wts = []
-            wts = []
-            vts = []
-            vt_opts = []
-            time_CS = []
-            time_US = []
-
-            # Determine whether to reset KC->MBON weights between trials
-            if reset_wts or (W_in is None):
-                W_in = self.init_w_kc_mbon(None, n_batch, (trial, n_trial))
-            else:
-                W_in = (W_in[0][-1].detach(), W_in[1][-1].detach())
-
-            for i in range(len(trial_ls)):
-                # Calculate the CS stimulus presentation times
-                st_times, st_len = gen_int_times(dt, n_batch, **kwargs)
-
-                # Generate odors and context (odor = KC = CS, context = ext = US)
-                r_in = self.gen_r_kc_ext(n_batch, **kwargs)
-                # r_kc, r_ext = self.gen_r_kc_ext(n_batch, **kwargs)
-                if not self.static_odors:
-                    # self.eval_odors.append(r_kc)
-                    self.eval_odors.append(r_in[0])
-                # r_in = (r_kc, r_ext)
-
-                # Select the interval function to run
-                int_fnc = trial_ls[i]
-                # Calculate the interval inputs
-                f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch, **kwargs)
-                r_kct, r_extt, stim_ls, vt_opt = f_in
-
-                # Run the forward pass
-                net_out = self(r_kct, r_extt, time_int, n_batch, W_in)
-                rt_int, (Wt_int, wt_int), vt_int = net_out
-                # Pass the KC->MBON weights to the next interval
-                W_in = (Wt_int[-1], wt_int[-1])
-
-                # Append the interval outputs to lists
-                rts += rt_int
-                Wts += Wt_int
-                wts += wt_int
-                vts += vt_int
-                vt_opts += vt_opt
-                time_CS += stim_ls[0]
-                time_US += stim_ls[1]
-
-            # Concatenate the activities, weights and valences
-            self.eval_rts.append(torch.stack(rts, dim=-1).detach())
-            self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
-            self.eval_wts.append(torch.stack(wts, dim=-1).detach())
-            self.eval_vts.append(torch.stack(vts, dim=-1).detach())
-            self.eval_vt_opts.append(torch.stack(vts, dim=-1).detach())
-            self.eval_CS_stim.append(torch.stack(time_CS, dim=-1).detach())
-            self.eval_US_stim.append(torch.stack(time_US, dim=-1).detach())
-
-            # Calculate the loss
-            loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
-                             self.eval_rts[-1][:, -self.n_dan:, :])
-            self.eval_loss.append(loss.item())
-
-    def gen_r_kc_ext(self, n_batch, pos_val=None, **kwargs):
-        """ Generates neuron activations for context and odor inputs.
-
-        Parameters
-            n_batch = number of trials in eval-batch
-            pos_vt (kwarg) = indicates whether valence should be positive
-                             None: random valence
-                             True: positive valence
-                             False: negative valence
-        """
-
-        # Determine the contextual input (r_ext)
-        if pos_val is None:
-            r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext),
-                                      self.n_ext)
-        elif pos_val:
-            r_ext = torch.tensor([1, 0]).repeat(n_batch, 1)
-        elif not pos_val:
-            r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
-        else:
-            raise Exception('Not a valid value for pos_val')
-
-        # Determine odor input (r_kc)
+        # Conditioned stimuli (CS) = odors
         r_kc = torch.zeros(n_batch, self.n_kc)
+        # n_ones = int(self.n_kc * 0.1)
         for b in range(n_batch):
             # Define an odor (CS) for each trial
-            if self.train_odors is not None:
-                n_odors = self.train_odors.shape[0]
-                odor_select = torch.randint(n_odors, (1,))
-                r_kc_inds = self.train_odors[odor_select, :]
-            else:
-                r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
+            r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
             r_kc[b, r_kc_inds] = 1
+        # Unconditioned stimuli (US) = context
+        r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
 
         return r_kc, r_ext

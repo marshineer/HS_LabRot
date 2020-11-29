@@ -1,6 +1,7 @@
 # Import the required packages
-import torch
+# import torch
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
+from network_classes.paper_tasks.common import *
 
 
 class ExtendedCondRNN(FirstOrderCondRNN):
@@ -9,7 +10,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
         # Set the number of task intervals
         self.n_int = 3
 
-    def gen_inputs(self, stim_times, stim_len, time_len, n_batch, p_omit=0.5):
+    def gen_inputs(self, T_vars, n_batch, p_omit=0.5):
         """ Generates inputs for extinction and second-order tasks.
 
         Trials are either extinction or second-order conditioning. No strictly
@@ -34,9 +35,11 @@ class ExtendedCondRNN(FirstOrderCondRNN):
               control trials
 
         Parameters
-            stim_times = indices of stimulus presentations for each interval
-            stim_len = length of stimulus presentation (in indices)
-            time_len = size of time vector
+            T_vars: Tuple
+                T_vars[0] = T_int = length of trial (in seconds)
+                T_vars[1] = T_stim = length of time each stimulus is presented
+                T_vars[2] = dt = time step of simulations
+                T_vars[3] = time_len = size of time vector
             n_batch = number of trials in mini-batch
             p_omit = probability of omitting either CS or US from trials
 
@@ -47,23 +50,14 @@ class ExtendedCondRNN(FirstOrderCondRNN):
             ls_stims = stimulus time series for plotting
         """
 
-        # Set stimulus presentation time dtype
-        stim_times = stim_times.int()
+        # Set the range over which stimuli can be presented
+        T_range = (5, 15)
+        # Set the time variables
+        T_stim, dt, time_len = T_vars[1:]
 
-        # # Conditioned stimuli (CS) = odors
-        # r_kc1 = torch.zeros(n_batch, self.N_kc)
-        # r_kc2 = torch.zeros_like(r_kc1)
-        # n_ones = int(self.N_kc * 0.1)
-        # for b in range(n_batch):
-        #     # Define odors (CS1 and CS2) for each trial
-        #     r_kc_inds = torch.multinomial(torch.ones(self.N_kc), self.n_ones)
-        #     r_kc1[b, r_kc_inds] = 1
-        #     r_kc_inds = torch.multinomial(torch.ones(self.N_kc), self.n_ones)
-        #     r_kc2[b, r_kc_inds] = 1
-        # # Unconditioned stimuli (US) = context
-        # r_ext = torch.multinomial(torch.ones(n_batch, self.N_ext), self.N_ext)
         # Generate odors and context signals for each trial
-        r_kc1, r_kc2, r_ext = self.gen_r_kc_ext(n_batch)
+        r_kc1, r_ext = self.gen_r_kc_ext(n_batch)
+        r_kc2, _ = self.gen_r_kc_ext(n_batch)
 
         # Determine whether trials are extinction or second-order
         p_extinct = 0.5
@@ -94,9 +88,12 @@ class ExtendedCondRNN(FirstOrderCondRNN):
             # Define the target valences
             val_int = torch.zeros_like(time_CS1)
 
+            # Calculate the stimulus presentation times and length
+            st_times, st_len = gen_int_times(n_batch, dt, T_stim, T_range)
+
             # Set the inputs for each trial
             for b in range(n_batch):
-                stim_inds = stim_times[b, i] + torch.arange(stim_len)
+                stim_inds = st_times[b] + torch.arange(st_len)
                 # Set the inputs for extinction trials
                 if extinct_inds[b]:
                     # Set the CS input times
@@ -104,7 +101,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
                         time_CS1[b, stim_inds] = 1
                     # Set the US input times
                     if i == 0 and not omit_US_inds[b]:
-                        time_US[b, stim_inds + stim_len] = 1
+                        time_US[b, stim_inds + st_len] = 1
                     # Set the target valence times
                     if i > 0 and not omit_inds[b]:
                         if r_ext[b, 0] == 1:
@@ -113,24 +110,24 @@ class ExtendedCondRNN(FirstOrderCondRNN):
                             val_int[b, (stim_inds + 1)] = -1 / i
                 # Set the inputs for second-order conditioning trials
                 else:
-                    # Set the CS1 input times
+                    # Set the CS1 and CS2 input times
                     if not omit_CS_inds[b]:
                         if i == 0:
                             time_CS1[b, stim_inds] = 1
                         if i == 1:
-                            time_CS1[b, stim_inds + stim_len] = 1
+                            time_CS1[b, stim_inds + st_len] = 1
                             time_CS2[b, stim_inds] = 1
                         if i == 2:
                             time_CS2[b, stim_inds] = 1
                     # Set the US input times
                     if i == 0 and not omit_US_inds[b]:
-                        time_US[b, stim_inds + stim_len] = 1
+                        time_US[b, stim_inds + st_len] = 1
                     # Set the target valence times
                     if i > 0 and not omit_inds[b]:
                         if r_ext[b, 0] == 1:
-                            val_int[b, (stim_inds + (i % 2) * stim_len + 1)] = 1
+                            val_int[b, (stim_inds + (i % 2) * st_len + 1)] = 1
                         else:
-                            val_int[b, (stim_inds + (i % 2) * stim_len + 1)] = -1
+                            val_int[b, (stim_inds + (i % 2) * st_len + 1)] = -1
 
             # Calculate the stimulus time series (KC = CS, ext = US)
             r_kct = torch.einsum('bm, mbt -> bmt', r_kc1,
@@ -154,30 +151,3 @@ class ExtendedCondRNN(FirstOrderCondRNN):
         ls_stims = [torch.cat(ls_CS1), torch.cat(ls_US), torch.cat(ls_CS2)]
 
         return r_kct_ls, r_extt_ls, vt_opt, ls_stims
-
-    def gen_r_kc_ext(self, n_batch):
-        """ Generates neuron activities for context and odor inputs.
-
-        Parameters
-            n_batch = number of trials in mini-batch
-
-        Returns
-            r_kc1 = odor (KC) inputs for CS1
-            r_kc1 = odor (KC) inputs for CS2
-            r_ext = context (ext) inputs
-        """
-
-        # Conditioned stimuli (CS) = odors
-        r_kc1 = torch.zeros(n_batch, self.n_kc)
-        r_kc2 = torch.zeros_like(r_kc1)
-        # n_ones = int(self.N_kc * 0.1)
-        for b in range(n_batch):
-            # Define odors (CS1 and CS2) for each trial
-            r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
-            r_kc1[b, r_kc_inds] = 1
-            r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
-            r_kc2[b, r_kc_inds] = 1
-        # Unconditioned stimuli (US) = context
-        r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
-
-        return r_kc1, r_kc2, r_ext

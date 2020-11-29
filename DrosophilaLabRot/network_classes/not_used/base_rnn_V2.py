@@ -1,9 +1,9 @@
 # Import the required packages
-import numpy as np
-import torch
+# import numpy as np
+# import torch
 import torch.nn as nn
 from torch.autograd import Variable
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from network_classes.paper_tasks.common import *
 
 
@@ -410,14 +410,6 @@ class FirstOrderCondRNN(nn.Module):
         # Set stimulus presentation time dtype
         stim_times = stim_times.int()
 
-        # # Conditioned stimuli (CS) = odors
-        # r_kc = torch.zeros(n_batch, self.n_kc)
-        # for b in range(n_batch):
-        #     # Define an odor (CS) for each trial
-        #     r_kc_inds = torch.multinomial(torch.ones(self.n_kc), self.n_ones)
-        #     r_kc[b, r_kc_inds] = 1
-        # # Unconditioned stimuli (US) = context
-        # r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext), self.n_ext)
         # Generate odors and context signals for each trial
         r_kc, r_ext = self.gen_r_kc_ext(n_batch)
 

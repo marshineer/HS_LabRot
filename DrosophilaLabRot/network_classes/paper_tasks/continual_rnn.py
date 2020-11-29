@@ -1,8 +1,9 @@
 # Import the required packages
-import torch
+# import torch
 import torch.nn as nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
+from network_classes.paper_tasks.common import *
 
 
 class ContinualRNN(FirstOrderCondRNN):
@@ -74,75 +75,25 @@ class ContinualRNN(FirstOrderCondRNN):
 
         return W_in
 
-    def gen_stim_times(self, T_stim, T_int, dt, n_epoch, n_batch):
-        """ Generates an array of stimulus presentation times for all trials.
+    def gen_inputs(self, T_vars, n_batch, **kwargs):
+        """ Generates inputs for continual learning task.
+
+        Trials consist of the presentation of four different odors, with
+        presentation times drawn from a Poisson distribution with a mean of two.
+        The first two odors are conditioned stimuli, with the first
+        corresponding to a positive valence (approach behaviour) and the second
+        corresponding to a negative valence (avoidance behaviour). The last two
+        are neutral odors and have zero associated valence. The conditioned
+        stimuli are trained to respond (i.e. have a non-zero target valence) to
+        each presentation of the odor AFTER the first.
 
         Parameters
-            T_stim = length of time each stimulus is presented
-            T_int = length of task intervals
-            dt = time step of simulations
-            n_epoch = number of epochs to train over
+            T_vars: Tuple
+                T_vars[0] = T_int = length of trial (in seconds)
+                T_vars[1] = T_stim = length of time each stimulus is presented
+                T_vars[2] = dt = time step of simulations
+                T_vars[3] = time_len = size of time vector
             n_batch = number of trials in mini-batch
-
-        Returns
-            Array of stimulus presentation times
-        """
-
-        # Poisson rate of stimulus presentations
-        stim_rate = 2 / T_int
-
-        # Initialize stimulus presentation times array
-        #         stim_times = torch.zeros(n_epoch, n_batch, n_odors)
-        stim_times = [0] * n_epoch
-
-        # Generate a list of stimulus presentation times for each trial
-        for e in range(n_epoch):
-            batch_times = [0] * n_batch
-            for b in range(n_batch):
-                odor_times = [0] * self.n_trial_odors
-                for i in range(self.n_trail_odors):
-                    trial_times = []
-                    last_time = 0
-                    while True:
-                        stim_isi = -torch.log(torch.rand(1)) / stim_rate
-                        next_time = last_time + stim_isi
-                        if next_time < (T_int - 2 * T_stim):
-                            # Stimulus times are indices (not times)
-                            trial_times.append((next_time / dt).int())
-                            last_time += stim_isi
-                        # Ensure at least one presentation of each stimuli
-                        elif last_time == 0:
-                            continue
-                        else:
-                            break
-                    odor_times[i] = torch.stack(trial_times)
-                batch_times[b] = odor_times
-            stim_times[e] = batch_times
-
-        return stim_times
-
-    def gen_inputs(self, stim_times, stim_len, time_len, n_batch, **kwargs):
-        """ Generates inputs for first-order conditioning tasks.
-
-        All trials are either CS+, CS- (US omitted) or CS omitted (control trials
-        to avoid over-fitting). Of the trials where CS or US is omitted, a second
-        parameter determines the relative fractions of CS or US trials omitted
-        (p_omit_CS). See Fig. 2 of Jiang 2020 to determine sequencing of stimuli
-        during training. To account for the sequential nature of numerical
-        simulations, the target valence begins one time step after stimulus
-        onset. Details provided in Jiang 2020 -> Methods -> Conditioning Tasks.
-
-        The mix of conditions is listed as follows:
-            probability of CS+ trials = 1 - p_omit
-            probability of CS- trials = p_omit * 0.3
-            probability of control trials = p_omit * 0.7
-
-        Parameters
-            stim_times = indices of stimulus presentations for each interval
-            stim_len = length of stimulus presentation (in indices)
-            time_len = size of time vector
-            n_batch = number of trials in mini-batch
-            p_omit = probability of omitting either CS or US from trials
 
         Returns
             r_kct_ls = odor (KC) input time series arrays for each interval
@@ -151,8 +102,13 @@ class ContinualRNN(FirstOrderCondRNN):
             ls_stims = stimulus time series for plotting
         """
 
-        # # Number of active neurons in an odor
-        # n_ones = int(self.N_kc * 0.1)
+        # Set the time variables
+        T_int, T_stim, dt, time_len = T_vars
+        # Average number of stimulus presentations
+        st_mean = 2
+        # Calculate the stimulus presentation times and length
+        st_times, st_len = gen_cont_times(n_batch, dt, T_stim, T_int, st_mean,
+                                          self.n_trial_odors)
 
         # Initialize activity matrices
         r_kct = torch.zeros(n_batch, self.n_kc, time_len)
@@ -169,34 +125,26 @@ class ContinualRNN(FirstOrderCondRNN):
             time_CS = torch.zeros(n_batch, time_len)
             time_US = torch.zeros_like(time_CS)
 
-            # # Conditioned stimuli (CS) = odors
-            # r_kc = torch.zeros(n_batch, self.N_kc)
-            # # Unconditioned stimuli (US) = context
-            # r_ext = torch.multinomial(torch.ones(n_batch, self.N_ext),
-            #                           self.N_ext)
             # Generate odors and context signals for each trial
-            r_kc, r_ext = self.gen_r_kc_ext(n_batch)
-            if i < (self.n_trial_odors / 4):
-                r_ext = torch.tensor([1, 0]).repeat(n_batch, 1)
-            if (self.n_trial_odors / 4) < i < (self.n_trial_odors / 2):
-                r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
+            if i == 0:
+                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_val=True)
+            elif i == 1:
+                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_val=False)
+            else:
+                r_kc, r_ext = self.gen_r_kc_ext(n_batch)
 
             # For each trial
             for b in range(n_batch):
-                # # Define an odor (CS)
-                # r_kc_inds = torch.multinomial(torch.ones(self.N_kc), self.n_ones)
-                # r_kc[b, r_kc_inds] = 1
-
-                for j, st in enumerate(stim_times[b][i]):
+                for j, st in enumerate(st_times[i][b]):
                     # Set the CS input times
-                    stim_inds = st + torch.arange(stim_len)
+                    stim_inds = st + torch.arange(st_len)
                     time_CS[b, stim_inds] = 1
 
                     # For CS+ odors, set US and the valence
                     if i < (self.n_trial_odors / 2):
                         # Set the US input times
-                        time_US[b, (stim_inds + stim_len)] = 1
-                        # Set a target valence on every presentation but the first
+                        time_US[b, (stim_inds + st_len)] = 1
+                        # Set target valence on every presentation but the first
                         if j > 0:
                             if r_ext[b, 0] == 1:
                                 vt_opt[b, (stim_inds + 1)] = 1

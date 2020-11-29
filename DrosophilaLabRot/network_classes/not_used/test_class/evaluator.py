@@ -88,7 +88,7 @@ class RunNetwork:
 
             for i in range(len(trial_ls)):
                 # Calculate the CS stimulus presentation times
-                st_times, st_len = gen_st_times(dt, n_batch, **kwargs)
+                st_times, st_len = gen_int_times(dt, n_batch, **kwargs)
 
                 # Select the interval function to run
                 int_fnc = trial_ls[i]
@@ -146,7 +146,7 @@ class RunNetwork:
         elif not pos_val:
             r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
         else:
-            print('Not a valid value for pos_val')
+            raise Exception('Not a valid value for pos_val')
 
         # Determine odor input (r_kc)
         r_kc = torch.zeros(n_batch, self.n_kc)
