@@ -1,20 +1,20 @@
 # Import the required packages
-# import torch
 from torch.autograd import Variable
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
-from network_classes.paper_tasks.common import *
+from common.common import *
 
 
 class NoPlasticityRNN(FirstOrderCondRNN):
-    def __init__(self, *, n_odors=10):
-        super().__init__()
+    def __init__(self, *, n_odors=10, **kwargs):
+        super().__init__(**kwargs)
         # Set the static KC->MBON weights
         W_kc_mbon_max = 0.05
         self.W_kc_mbon = Variable(torch.rand(self.n_mbon, self.n_kc) *
                                   W_kc_mbon_max, requires_grad=False)
         # Generate a static list of odors for the network to train on
-        self.train_odors = torch.multinomial(torch.ones(n_odors, self.n_kc),
-                                             self.n_ones)
+        odor_inds = torch.multinomial(torch.ones(n_odors, self.n_kc),
+                                      self.n_ones)
+        self.train_odors = Variable(odor_inds)
         # Set the number of task intervals
         self.n_int = 1
 
@@ -72,7 +72,7 @@ class NoPlasticityRNN(FirstOrderCondRNN):
         T_stim, dt, time_len = T_vars[1:]
 
         # Generate odors and context signals for each trial
-        r_kc, r_ext = self.gen_r_kc_ext(n_batch)
+        r_kc, r_ext = self.gen_r_kc_ext(n_batch, **kwargs)
 
         # Determine whether CS2+ is switched (switch on half of trials)
         switch_inds = torch.rand(n_batch) < 0.5
@@ -103,9 +103,12 @@ class NoPlasticityRNN(FirstOrderCondRNN):
                 if i == 1:
                     # Switch the odor in half the trials (target valence is zero)
                     if switch_inds[b]:
+                        # CS2_inds = torch.multinomial(torch.ones(self.n_kc),
+                        #                              self.n_ones)
+                        # r_kc[b, CS2_inds] = 1
                         CS2_inds = torch.multinomial(torch.ones(self.n_kc),
-                                                     self.n_ones)
-                        r_kc[b, CS2_inds] = 1
+                                                     self.n_kc)
+                        r_kc[b, :] = r_kc[b, CS2_inds]
                     # If the odor is not switched, set the target valence
                     else:
                         if r_ext[b, 0] == 1:

@@ -1,16 +1,16 @@
 # Import the required packages
-# import torch
 import torch.nn as nn
-# import torch.nn.functional as F
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
-from network_classes.paper_tasks.common import *
+from common.common import *
 
 
 class ContinualRNN(FirstOrderCondRNN):
-    def __init__(self, *, n_trial_odors=4):
-        super().__init__()
+    def __init__(self, *, n_trial_avg=2, n_trial_odors=4, **kwargs):
+        super().__init__(**kwargs)
         # Set the number of task intervals
         self.n_int = 1
+        # Set the average number of stimulus presentations per trial
+        self.n_trial_avg = n_trial_avg
         # Set the number of odors to train over on each trial
         self.n_trial_odors = n_trial_odors
         # Add a non-specific potentiation parameter
@@ -104,11 +104,9 @@ class ContinualRNN(FirstOrderCondRNN):
 
         # Set the time variables
         T_int, T_stim, dt, time_len = T_vars
-        # Average number of stimulus presentations
-        st_mean = 2
         # Calculate the stimulus presentation times and length
-        st_times, st_len = gen_cont_times(n_batch, dt, T_stim, T_int, st_mean,
-                                          self.n_trial_odors)
+        st_times, st_len = gen_cont_times(n_batch, dt, T_stim, T_int,
+                                          self.n_trial_avg, self.n_trial_odors)
 
         # Initialize activity matrices
         r_kct = torch.zeros(n_batch, self.n_kc, time_len)
@@ -127,11 +125,12 @@ class ContinualRNN(FirstOrderCondRNN):
 
             # Generate odors and context signals for each trial
             if i == 0:
-                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_val=True)
+                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_vt=True)
             elif i == 1:
-                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_val=False)
+                r_kc, r_ext = self.gen_r_kc_ext(n_batch, pos_vt=False)
             else:
                 r_kc, r_ext = self.gen_r_kc_ext(n_batch)
+                r_ext = torch.tensor([0, 0]).repeat(n_batch, 1)
 
             # For each trial
             for b in range(n_batch):

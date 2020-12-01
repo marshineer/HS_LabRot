@@ -1,12 +1,11 @@
 # Import the required packages
-# import torch
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
-from network_classes.paper_tasks.common import *
+from common.common import *
 
 
 class ExtendedCondRNN(FirstOrderCondRNN):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         # Set the number of task intervals
         self.n_int = 3
 

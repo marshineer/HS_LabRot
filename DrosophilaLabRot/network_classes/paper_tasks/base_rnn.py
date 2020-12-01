@@ -1,15 +1,13 @@
 # Import the required packages
-# import numpy as np
-# import torch
+import numpy as np
 import torch.nn as nn
 from torch.autograd import Variable
-# import torch.nn.functional as F
-from network_classes.paper_tasks.common import *
+from common.common import *
 
 
 class FirstOrderCondRNN(nn.Module):
     def __init__(self, *, n_kc=200, n_mbon=20, n_fbn=60, n_ext=2, n_out=1,
-                 f_ones=0.1, n_seed=None):
+                 T_int=30, T_stim=2, dt=0.5, f_ones=0.1, n_seed=None):
         super().__init__()
 
         # Set the seeds
@@ -26,6 +24,9 @@ class FirstOrderCondRNN(nn.Module):
         self.tau_w = 5  # Time scale of KC->MBON LTD/LTP (plasticity)
         self.tau_r = 1  # Time scale of output circuitry activity
         self.n_int = 2  # Number of task intervals
+        self.T_int = T_int  # Length of task interval [seconds]
+        self.T_stim = T_stim  # Length of stimulus presentation [seconds]
+        self.dt = dt  # Length of simulation time step [seconds]
 
         # Set the sizes of layers
         n_dan = n_mbon
@@ -43,6 +44,7 @@ class FirstOrderCondRNN(nn.Module):
         self.train_odors = None
         self.eval_odors = None
         # Training parameters (for continuation)
+        self.train_T_vars = None
         self.train_rts = None
         self.train_Wts = None
         self.train_wts = None
@@ -226,7 +228,7 @@ class FirstOrderCondRNN(nn.Module):
 
         return prod1 - prod2
 
-    def run_train(self, *, opti, T_int=30, T_stim=2, dt=0.5, n_epoch=5000,
+    def run_train(self, opti, *, T_int=None, T_stim=None, dt=None, n_epoch=5000,
                   n_batch=30, reset_wts=True, clip=0.001, **kwargs):
         """ Trains a network on classical conditioning tasks.
 
@@ -256,9 +258,16 @@ class FirstOrderCondRNN(nn.Module):
             ls_stims = list of stimulus time series for plotting
         """
 
-        # Interval time vector and time variables
+        # Set the time variables
+        if T_int is None:
+            T_int = self.T_int
+        if T_stim is None:
+            T_stim = self.T_stim
+        if dt is None:
+            dt = self.dt
         time_int = torch.arange(0, T_int + dt / 10, dt)
         T_vars = (T_int, T_stim, dt, time_int.shape[0])
+        self.train_T_vars = T_vars[:-1]
 
         # List to store losses
         loss_hist = []
@@ -293,7 +302,8 @@ class FirstOrderCondRNN(nn.Module):
                 rts += rt_int
                 vts += vt_int
 
-            # Concatenate the activities, weights and valences
+            # Convert the list of time point values to a tensor
+            #  (time is the last dimension)
             rt_epoch = torch.stack(rts, dim=-1)
             vt_epoch = torch.stack(vts, dim=-1)
 
@@ -310,6 +320,8 @@ class FirstOrderCondRNN(nn.Module):
             if epoch % 500 == 0:
                 print(epoch, loss.item())
             loss_hist.append(loss.item())
+
+        self.train_loss = loss_hist
 
         return loss_hist
 
@@ -433,16 +445,17 @@ class FirstOrderCondRNN(nn.Module):
 
         return r_kct_ls, r_extt_ls, vt_opt, ls_stims
 
-    def run_eval(self, *, trial_ls, T_int=30, dt=0.5, n_batch=1, n_trial=1,
-                 reset_wts=True, **kwargs):
+    def run_eval(self, trial_ls, *, T_int=None, T_stim=None, dt=None, n_trial=1,
+                 n_batch=1, reset_wts=True, **kwargs):
         """ Runs an evaluation based on a series of input functions
 
         Parameters
             trial_ls = list of interval functions that compose a trial
             T_int = length of a task interval (in seconds)
+            T_stim = length of time each stimulus is presented
             dt = time step of simulation (in seconds)
+            n_trial = number of trials to run
             n_batch = number of parallel trials in a batch
-            n_trials = number of trials to run
             reset_wts = indicates whether to reset weights between trials
         """
 
@@ -456,9 +469,16 @@ class FirstOrderCondRNN(nn.Module):
         self.eval_US_stim = []
         self.eval_loss = []
 
-        # Interval time vector
+        # Set the time variables
+        if T_int is None:
+            T_int = self.T_int
+        if T_stim is None:
+            T_stim = self.T_stim
+        if dt is None:
+            dt = self.dt
         time_int = torch.arange(0, T_int + dt / 10, dt)
         t_len = time_int.shape[0]
+        n_int = len(trial_ls)
 
         # Initialize the KC-MBON weights and plasticity variable
         W_in = None
@@ -481,23 +501,25 @@ class FirstOrderCondRNN(nn.Module):
             else:
                 W_in = (W_in[0][-1].detach(), W_in[1][-1].detach())
 
-            for i in range(len(trial_ls)):
-                # Calculate the CS stimulus presentation times
-                st_times, st_len = gen_int_times(dt, n_batch, **kwargs)
+            # Generate odors and context (odor = KC = CS, context = ext = US)
+            r_kc0, r_ext0 = self.gen_r_kc_ext(n_batch, **kwargs)
+            trial_odors = [r_kc0]
+            r_in = ([r_kc0], r_ext0)
 
-                # Generate odors and context (odor = KC = CS, context = ext = US)
-                r_in = self.gen_r_kc_ext(n_batch, **kwargs)
-                # r_kc, r_ext = self.gen_r_kc_ext(n_batch, **kwargs)
-                if not self.static_odors:
-                    # self.eval_odors.append(r_kc)
-                    self.eval_odors.append(r_in[0])
-                # r_in = (r_kc, r_ext)
+            # Store the max number of CS stimuli across all intervals
+            max_num_CS = 1
+            max_num_US = 1
+
+            for i in range(n_int):
+                # Calculate the CS stimulus presentation times
+                st_times, st_len = gen_int_times(n_batch, dt, T_stim, **kwargs)
 
                 # Select the interval function to run
                 int_fnc = trial_ls[i]
                 # Calculate the interval inputs
-                f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch, **kwargs)
-                r_kct, r_extt, stim_ls, vt_opt = f_in
+                f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch,
+                               T_stim=T_stim, dt=dt, **kwargs)
+                r_in, r_kct, r_extt, stim_ls, vt_opt = f_in
 
                 # Run the forward pass
                 net_out = self(r_kct, r_extt, time_int, n_batch, W_in)
@@ -510,25 +532,63 @@ class FirstOrderCondRNN(nn.Module):
                 Wts += Wt_int
                 wts += wt_int
                 vts += vt_int
-                vt_opts += vt_opt
-                time_CS += stim_ls[0]
-                time_US += stim_ls[1]
+                vt_opts.append(vt_opt)
+                time_CS.append(stim_ls[0])
+                time_US.append(stim_ls[1])
 
-            # Concatenate the activities, weights and valences
+                # Update max number of CS
+                max_num_CS = max(max_num_CS, len(stim_ls[0]))
+                max_num_US = max(max_num_US, len(stim_ls[1]))
+
+            # # If the odors are not static for all trials, save odors
+            # if not self.static_odors:
+            #     # self.eval_odors.append(r_kc)
+            #     self.eval_odors.append(trial_odors)
+
+            # Convert the lists of time point values to a tensor,
+            # time is the last dimension
             self.eval_rts.append(torch.stack(rts, dim=-1).detach())
             self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
             self.eval_wts.append(torch.stack(wts, dim=-1).detach())
             self.eval_vts.append(torch.stack(vts, dim=-1).detach())
-            self.eval_vt_opts.append(torch.stack(vts, dim=-1).detach())
-            self.eval_CS_stim.append(torch.stack(time_CS, dim=-1).detach())
-            self.eval_US_stim.append(torch.stack(time_US, dim=-1).detach())
+            self.eval_vt_opts.append(torch.cat(vt_opts, dim=-1).detach())
 
+            # TODO: This is messy, clean up this storage method
+            # Concatenate time lists to store
+            trial_CSs = []
+            for i in range(max_num_CS):
+                CS_vec = torch.zeros(n_batch, t_len * n_int)
+                for j in range(n_int):
+                    try:
+                        CS_vec[:, j * t_len:(j + 1) * t_len] = time_CS[j][i]
+                    except IndexError:
+                        pass
+                trial_CSs.append(CS_vec)
+
+            trial_USs = []
+            for i in range(max_num_US):
+                US_vec = torch.zeros(n_batch, t_len * n_int)
+                for j in range(n_int):
+                    try:
+                        US_vec[:, j * t_len:(j + 1) * t_len] = time_US[j][i]
+                    except IndexError:
+                        pass
+                trial_USs.append(US_vec)
+
+            # Store the time series lists
+            self.eval_CS_stim.append(trial_CSs)
+            self.eval_US_stim.append(trial_USs)
+
+            # TODO: I think the loss function fails for batch sizes of 1
             # Calculate the loss
+            # print(self.eval_vts[-1].shape)
+            # print(self.eval_vt_opts[-1].shape)
+            # print(self.eval_rts[-1][:, -self.n_dan:, :].shape)
             loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
                              self.eval_rts[-1][:, -self.n_dan:, :])
             self.eval_loss.append(loss.item())
 
-    def gen_r_kc_ext(self, n_batch, pos_val=None, **kwargs):
+    def gen_r_kc_ext(self, n_batch, pos_vt=None, **kwargs):
         """ Generates neuron activations for context and odor inputs.
 
         Parameters
@@ -540,15 +600,15 @@ class FirstOrderCondRNN(nn.Module):
         """
 
         # Determine the contextual input (r_ext)
-        if pos_val is None:
+        if pos_vt is None:
             r_ext = torch.multinomial(torch.ones(n_batch, self.n_ext),
                                       self.n_ext)
-        elif pos_val:
+        elif pos_vt:
             r_ext = torch.tensor([1, 0]).repeat(n_batch, 1)
-        elif not pos_val:
+        elif not pos_vt:
             r_ext = torch.tensor([0, 1]).repeat(n_batch, 1)
         else:
-            raise Exception('Not a valid value for pos_val')
+            raise Exception('Not a valid value for pos_vt')
 
         # Determine odor input (r_kc)
         r_kc = torch.zeros(n_batch, self.n_kc)
