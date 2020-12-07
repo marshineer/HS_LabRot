@@ -242,6 +242,7 @@ def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
 
     # Set odors and context signals for each trial
     r_kcs, r_ext = r_in
+    # The input odor is the second odor presented (CS1)
     r_kc2 = r_kcs[0]
     n_kc = r_kc2.shape[1]
     n_ext = r_ext.shape[1]
@@ -259,15 +260,15 @@ def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
     for b in range(n_batch):
         # Shuffle the indices to create a new second odor
         new_inds = torch.multinomial(torch.ones(n_kc), n_ones)
-        # r_kc2[b, :] = r_kc1[b, new_inds]
+        # r_kc1[b, :] = r_kc2[b, new_inds]
         r_kc1[b, new_inds] = 1
 
         # Convert stimulus time into range of indices
         stim_inds = st_times[b] + torch.arange(st_len)
         # Set the CS1 input times
-        time_CS1[b, (stim_inds + st_len)] = 1
+        time_CS1[b, stim_inds] = 1
         # Set the CS2 input times
-        time_CS2[b, stim_inds] = 1
+        time_CS2[b, (stim_inds + st_len)] = 1
         # Set the target valence
         vt_opt[b, (stim_inds + st_len + 1)] = 1
 

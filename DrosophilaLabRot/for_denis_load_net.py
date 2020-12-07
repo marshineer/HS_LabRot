@@ -29,7 +29,7 @@ net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
 #   fo = first-order only
 #   ac = all classical (conditioning)
 #   cl = continual (learning)
-net_fname = 'trained_knockout_so_5000ep_one_hop'
+net_fname = 'trained_knockout_so_5000ep_two_hop'
 fname = net_path + 'trained_nets/' + net_fname + '.pt'
 network.load_state_dict(torch.load(fname))
 

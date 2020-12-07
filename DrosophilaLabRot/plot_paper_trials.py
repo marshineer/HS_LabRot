@@ -6,6 +6,10 @@ from network_classes.paper_tasks.continual_rnn import ContinualRNN
 from common.common import *
 from common.plotting import *
 
+# Define the path for saving the trained networks and loss plots
+net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
+           'DrosophilaLabRot/data_store/paper_nets/'
+
 # Set the training and plotting parameters
 man_input = input('Manually select the trial to plot? y/n ')
 save_plot = input('Do you wish to save the plot? y/n ')
@@ -20,8 +24,6 @@ elif man_input == 'n':
     plot_type_list = ['CS+', 'CS-', '-', '-', 'CS+', 'CS-', '-']
 else:
     raise Exception('This is not a valid response')
-net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
-           'DrosophilaLabRot/data_store/paper_nets/'
 
 if man_input == 'y':
     n_loops = 1
@@ -76,17 +78,14 @@ for i in range(n_loops):
     network.load_state_dict(torch.load(fname))
 
     # Plot trials for trained networks
-    p_ctrl = 0
     if net_type == 'first':
         # Classical conditioning
         if plot_type == 'CS+':
-            p_ctrl = 0
             trial_ls = [first_order_cond_csp, first_order_test]
             plt_fname = 'first_order_csp_{}ep'.format(n_ep)
             plt_ttl = 'First-order Conditioning (CS+)'
             plt_lbl = (['CS+'], ['US'])
         elif plot_type == 'CS-':
-            p_ctrl = 1
             trial_ls = [first_order_csm, first_order_test]
             plt_fname = 'first_order_csp_{}ep'.format(n_ep)
             plt_ttl = 'First-order Conditioning (CS-)'
@@ -106,13 +105,11 @@ for i in range(n_loops):
     elif net_type == 'no_plast':
         # No plasticity
         if plot_type == 'CS+':
-            p_ctrl = 0
             trial_ls = [no_plasticity_trial]
             plt_fname = 'no_plasticity_csp_{}odor_{}ep'.format(n_odors, n_ep)
             plt_ttl = 'No Plasticity (CS+)'
             plt_lbl = (['CS+', 'CS-'], ['US'])
         elif plot_type == 'CS-':
-            p_ctrl = 1
             trial_ls = [no_plasticity_trial]
             plt_fname = 'no_plasticity_csm_{}odor_{}ep'.format(n_odors, n_ep)
             plt_ttl = 'No Plasticity (CS-)'
@@ -130,8 +127,7 @@ for i in range(n_loops):
 
     # Plot the trial
     T_vars = (network.T_int, network.T_stim, network.dt)
-    fig = plot_trial(network, trial_ls, plt_ttl, plt_lbl, T_vars, p_ctrl=p_ctrl,
-                     pos_vt=True)
+    fig = plot_trial(network, trial_ls, plt_ttl, plt_lbl, T_vars, pos_vt=True)
 
     # Save the losses plot
     plot_path = net_path + 'trial_plots/' + plt_fname + '_trial.png'

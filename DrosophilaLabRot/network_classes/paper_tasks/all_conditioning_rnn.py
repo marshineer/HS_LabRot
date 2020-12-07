@@ -9,7 +9,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
         # Set the number of task intervals
         self.n_int = 3
 
-    def gen_inputs(self, T_vars, n_batch, p_omit=0.5):
+    def gen_inputs(self, T_vars, n_batch, p_omit=0.5, p_extinct=0.5):
         """ Generates inputs for extinction and second-order tasks.
 
         Trials are either extinction or second-order conditioning. No strictly
@@ -41,6 +41,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
                 T_vars[3] = time_len = size of time vector
             n_batch = number of trials in mini-batch
             p_omit = probability of omitting either CS or US from trials
+            p_extinct = probability of trials being extinction trials
 
         Returns
             r_kct_ls = odor (KC) input time series arrays for each interval
@@ -59,7 +60,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
         r_kc2, _ = self.gen_r_kc_ext(n_batch)
 
         # Determine whether trials are extinction or second-order
-        p_extinct = 0.5
+        p_extinct = p_extinct
         extinct_inds = torch.rand(n_batch) < p_extinct
 
         # Determine whether CS or US are randomly omitted

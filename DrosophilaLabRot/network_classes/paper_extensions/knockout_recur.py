@@ -2,12 +2,14 @@
 import numpy as np
 from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
 from network_classes.paper_tasks.continual_rnn import ContinualRNN
+from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
 from common.common import *
 
 
 class NoRecurFirstO(FirstOrderCondRNN):
-    def __init__(self, **kwargs):
+    def __init__(self, two_hop=True, **kwargs):
         super().__init__(**kwargs)
+        self.two_hop = two_hop
 
     def forward(self, r_kc, r_ext, time, n_batch=30, W0=None, r0=None, **kwargs):
         """ Defines the forward pass of the RNN
@@ -55,7 +57,12 @@ class NoRecurFirstO(FirstOrderCondRNN):
 
         # Set the weights DAN->MBON, DAN->FBN, FBN->MBON, FBN->FBN to zero
         W_recur = self.W_recur.clone()
-        W_recur[:(self.n_mbon + self.n_fbn), -(self.n_dan + self.n_fbn):] = 0
+        if self.two_hop:
+            W_recur[:(self.n_mbon + self.n_fbn), -(self.n_dan + self.n_fbn):] = 0
+        else:
+            W_recur[:self.n_mbon, -self.n_dan:] = 0
+            W_recur[self.n_mbon:(self.n_mbon + self.n_fbn), :] = 0
+            W_recur[:, self.n_mbon:(self.n_mbon + self.n_fbn)] = 0
 
         # Initialize the KC->MBON weights
         W_kc_mbon = [W0[0]]
@@ -94,6 +101,13 @@ class NoRecurFirstO(FirstOrderCondRNN):
                                         r_recur[-1][:, :self.n_mbon]).squeeze())
 
         return r_recur, (W_kc_mbon, wt), readout
+
+
+class NoRecurExtended(NoRecurFirstO, ExtendedCondRNN):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Set the number of task intervals
+        self.n_int = 3
 
 
 class NoRecurContinual(NoRecurFirstO, ContinualRNN):

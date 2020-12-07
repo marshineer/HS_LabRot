@@ -7,13 +7,8 @@ from common.common import *
 
 class FirstOrderCondRNN(nn.Module):
     def __init__(self, *, n_kc=200, n_mbon=20, n_fbn=60, n_ext=2, n_out=1,
-                 T_int=30, T_stim=2, dt=0.5, f_ones=0.1, n_seed=None):
+                 T_int=30, T_stim=2, dt=0.5, f_ones=0.1, n_hop=0, n_seed=None):
         super().__init__()
-
-        # Set the seeds
-        if n_seed is not None:
-            np.random.seed(n_seed)
-            torch.manual_seed(n_seed)
 
         # Set constants
         W_kc_mbon_max = 0.05
@@ -27,6 +22,7 @@ class FirstOrderCondRNN(nn.Module):
         self.T_int = T_int  # Length of task interval [seconds]
         self.T_stim = T_stim  # Length of stimulus presentation [seconds]
         self.dt = dt  # Length of simulation time step [seconds]
+        self.n_hop = n_hop
 
         # Set the sizes of layers
         n_dan = n_mbon
@@ -63,28 +59,44 @@ class FirstOrderCondRNN(nn.Module):
         self.eval_US_stim = None
         self.eval_loss = None
 
+        # Set the seed
+        if n_seed is None:
+            # self.gen = n_seed
+            gen = n_seed
+        else:
+            np.random.seed(n_seed)
+            torch.manual_seed(n_seed)
+            gen = torch.Generator()
+            gen = gen.manual_seed(n_seed)
+            # self.gen = gen
+
         # Define updatable network parameters
         sqrt2 = torch.sqrt(torch.tensor(2, dtype=torch.float))
         mean_mbon = torch.zeros((self.n_recur, n_mbon))
         mean_fbn = torch.zeros((self.n_recur, n_fbn))
         mean_dan = torch.zeros((self.n_recur, n_dan))
         W_mbon = torch.normal(mean_mbon, torch.sqrt(1 / (sqrt2 * n_mbon)),
-                              generator=n_seed)
+                              generator=gen)
         W_fbn = torch.normal(mean_fbn, torch.sqrt(1 / (sqrt2 * n_fbn)),
-                             generator=n_seed)
+                             generator=gen)
         W_dan = torch.normal(mean_dan, torch.sqrt(1 / (sqrt2 * n_dan)),
-                             generator=n_seed)
+                             generator=gen)
         self.W_recur = nn.Parameter(torch.cat((W_mbon, W_fbn, W_dan), dim=1),
                                     requires_grad=True)
-        self.W_ext = nn.Parameter(torch.randn(n_fbn, n_ext),
-                                  requires_grad=True)
         mean_readout = torch.zeros((n_out, n_mbon))
         std_readout = 1 / torch.sqrt(torch.tensor(n_mbon, dtype=torch.float))
         self.W_readout = nn.Parameter(torch.normal(mean_readout, std_readout,
-                                                   generator=n_seed),
+                                                   generator=gen),
                                       requires_grad=True)
         self.bias = nn.Parameter(torch.ones(self.n_recur) * 0.1,
                                  requires_grad=True)
+        # Project the context (ext) signals to the DANs if FBNs are removed
+        if n_hop == 1:
+            self.W_ext = nn.Parameter(torch.randn(n_dan, n_ext),
+                                      requires_grad=True)
+        else:
+            self.W_ext = nn.Parameter(torch.randn(n_fbn, n_ext),
+                                      requires_grad=True)
 
     def forward(self, r_kc, r_ext, time, n_batch=30, W0=None, r0=None, **kwargs):
         """ Defines the forward pass of the RNN
@@ -132,7 +144,14 @@ class FirstOrderCondRNN(nn.Module):
 
         # Set the weights DAN->MBON to zero
         W_recur = self.W_recur.clone()
-        W_recur[:self.n_mbon, -self.n_dan:] = 0
+        if self.n_hop == 0:
+            W_recur[:self.n_mbon, -self.n_dan:] = 0
+        elif self.n_hop == 1:
+            W_recur[:self.n_mbon, -self.n_dan:] = 0
+            W_recur[self.n_mbon:(self.n_mbon + self.n_fbn), :] = 0
+            W_recur[:, self.n_mbon:(self.n_mbon + self.n_fbn)] = 0
+        elif self.n_hop == 2:
+            W_recur[:(self.n_mbon + self.n_fbn), -(self.n_dan + self.n_fbn):] = 0
 
         # Initialize the KC->MBON weights
         W_kc_mbon = [W0[0]]
@@ -141,14 +160,21 @@ class FirstOrderCondRNN(nn.Module):
         # Update activity for each time step
         for t in range(time.shape[0] - 1):
             # Define the input to the output circuitry
+            I_tot = torch.zeros((n_batch, self.n_recur))
             I_kc_mbon = torch.einsum('bmk, bk -> bm',
                                      W_kc_mbon[-1], r_kc[:, :, t])
-            I_fbn = torch.einsum('bfe, be -> bf',
-                                 self.W_ext.repeat(n_batch, 1, 1),
-                                 r_ext[:, :, t])
-            I_tot = torch.zeros((n_batch, self.n_recur))
             I_tot[:, :self.n_mbon] = I_kc_mbon
-            I_tot[:, self.n_mbon:self.n_mbon + self.n_fbn] = I_fbn
+            # Project the context (ext) signals to the DANs if FBNs are removed
+            if self.n_hop == 1:
+                I_dan = torch.einsum('bde, be -> bd',
+                                     self.W_ext.repeat(n_batch, 1, 1),
+                                     r_ext[:, :, t])
+                I_tot[:, (self.n_mbon + self.n_fbn):] = I_dan
+            else:
+                I_fbn = torch.einsum('bfe, be -> bf',
+                                     self.W_ext.repeat(n_batch, 1, 1),
+                                     r_ext[:, :, t])
+                I_tot[:, self.n_mbon:(self.n_mbon + self.n_fbn)] = I_fbn
 
             # Update the output circuitry activity (see Eq. 1)
             Wr_prod = torch.einsum('bsr, br -> bs',
@@ -162,7 +188,6 @@ class FirstOrderCondRNN(nn.Module):
             wt_out = self.wt_update(W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan,
                                     r_kc[:, :, t], r_recur[-1][:, -self.n_dan:],
                                     n_batch, **kwargs)
-            # W_kc_mbon, wt, r_bar_kc, r_bar_dan = out
             r_bar_kc, r_bar_dan = wt_out
 
             # Calculate the readout (see Eq. 2)
@@ -205,7 +230,6 @@ class FirstOrderCondRNN(nn.Module):
         # Clip the KC->MBON weights to the range [0, 0.05]
         W_kc_mbon.append(torch.clamp(W_tp1, self.kc_mbon_min, self.kc_mbon_max))
 
-        # return W_kc_mbon, wt, r_bar_kc, r_bar_dan
         return r_bar_kc, r_bar_dan
 
     def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, **kwargs):
@@ -553,7 +577,6 @@ class FirstOrderCondRNN(nn.Module):
             self.eval_vts.append(torch.stack(vts, dim=-1).detach())
             self.eval_vt_opts.append(torch.cat(vt_opts, dim=-1).detach())
 
-            # TODO: This is messy, clean up this storage method
             # Concatenate time lists to store
             trial_CSs = []
             for i in range(max_num_CS):
@@ -564,7 +587,6 @@ class FirstOrderCondRNN(nn.Module):
                     except IndexError:
                         pass
                 trial_CSs.append(CS_vec)
-
             trial_USs = []
             for i in range(max_num_US):
                 US_vec = torch.zeros(n_batch, t_len * n_int)
@@ -579,11 +601,7 @@ class FirstOrderCondRNN(nn.Module):
             self.eval_CS_stim.append(trial_CSs)
             self.eval_US_stim.append(trial_USs)
 
-            # TODO: I think the loss function fails for batch sizes of 1
-            # Calculate the loss
-            # print(self.eval_vts[-1].shape)
-            # print(self.eval_vt_opts[-1].shape)
-            # print(self.eval_rts[-1][:, -self.n_dan:, :].shape)
+            # Save the loss
             loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
                              self.eval_rts[-1][:, -self.n_dan:, :])
             self.eval_loss.append(loss.item())

@@ -7,10 +7,9 @@ from network_classes.paper_tasks.no_plasticity_rnn import NoPlasticityRNN
 from network_classes.paper_tasks.continual_rnn import ContinualRNN
 from common.common import *
 
-# Define plot font sizes
-label_font = 18
-title_font = 24
-legend_font = 12
+# Define the path for saving the trained networks and loss plots
+net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
+           'DrosophilaLabRot/data_store/paper_nets/'
 
 # Set the training and plotting parameters
 net_type = input('Input network type (first, all_classic, no_plast or '
@@ -41,8 +40,6 @@ lr = 0.001
 optimizer = optim.RMSprop(network.parameters(), lr=lr)
 
 # Train the network
-net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
-           'DrosophilaLabRot/data_store/paper_nets/'
 if net_type == 'first':
     # Classical training
     plt_title = 'First-order Conditioning Training Losses'
@@ -64,6 +61,11 @@ elif net_type == 'continual':
 loss_hist = network.run_train(opti=optimizer, n_epoch=n_ep)
 fname = net_path + 'trained_nets/' + net_fname + '.pt'
 torch.save(network.state_dict(), fname)
+
+# Define plot font sizes
+label_font = 18
+title_font = 24
+legend_font = 12
 
 # Plot the loss function
 fig, axes = plt.subplots(1, 2, figsize=(10, 6))
