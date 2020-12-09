@@ -3,6 +3,26 @@ import torch
 import torch.nn.functional as F
 
 
+def cond_err(vt, vt_opt):
+    """ Calculates the readout error for conditioning tasks.
+
+    Only accounts for error due to difference between target (optimal) readout
+    and the MBON readout scalar.
+
+    Parameters
+        vt = time dependent valence output of network
+        vt_opt = target valence (must be a torch tensor)
+
+    Returns
+        vt_loss = scalar readout error used in evaluation
+    """
+
+    # Calculate the MSE loss of the valence
+    vt_loss = torch.mean((vt - vt_opt) ** 2)
+
+    return vt_loss
+
+
 def cond_loss(vt, vt_opt, r_DAN, lam=0.1):
     """ Calculates the loss for conditioning tasks.
 
@@ -23,39 +43,38 @@ def cond_loss(vt, vt_opt, r_DAN, lam=0.1):
     # Set the baseline DAN activity
     DAN_baseline = 0.1
 
-    # Calculate the MSE loss of the valence
-    v_sum = torch.mean((vt - vt_opt) ** 2, dim=1)
-    v_loss = torch.mean(v_sum)
+    # Calculate the MSE loss of the valence (scalar)
+    vt_loss = cond_err(vt, vt_opt)
 
-    # Calculate regularization term
-    r_sum = torch.sum(F.relu(r_DAN - DAN_baseline) ** 2, dim=1)
-    r_loss = torch.mean(r_sum, dim=1) * lam
+    # Calculate DAN activity regularization term (scalar)
+    rt_sum = torch.sum(F.relu(r_DAN - DAN_baseline) ** 2, dim=1)
+    rt_loss = torch.mean(rt_sum) * lam
 
-    # Calculate the summed loss (size = n_batch)
-    loss = v_loss + r_loss
+    # Calculate the combined loss
+    loss = vt_loss + rt_loss
 
-    # Average the loss over all batches
-    loss_tot = torch.mean(loss)
-
-    return loss_tot
+    return loss
 
 
-def first_order_cond_csp(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+def int_cond_cs(t_len, st_times, st_len, r_in, n_batch):
     """ Runs a first-order conditioning interval (CS+ and US).
 
     Parameters
         t_len = length of task interval (in indices)
         st_times = array of stimulus presentation times for each trial
         stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
+        r_in = input neuron activations (CS+ = r_kc and US = r_ext)
         n_batch = number of trials in batch
-        p_ctrl (kwarg) = fraction of control trials during training
-        p_csm (kwarg) = fraction of control trials that are CS-
+
+    Returns
+        r_kct = Kenyon cell (odor) activity time series
+        r_extt = contextual signal time series
+        stim_ls = conditioned (CS) and unconditioned (US) stimulus time series
+        vt_opt = target readout for interval
     """
 
     # Set odors and context signals for this interval
-    r_kcs, r_ext = r_in
-    r_kc = r_kcs[0]
+    r_kc, r_ext = r_in
     n_kc = r_kc.shape[1]
     n_ext = r_ext.shape[1]
 
@@ -80,12 +99,12 @@ def first_order_cond_csp(t_len, st_times, st_len, r_in, n_batch, **kwargs):
                           time_US.repeat(n_ext, 1, 1))
 
     # Combine the time matrices into a list
-    stim_ls = [[time_CS], time_US]
+    stim_ls = [time_CS, time_US]
 
-    return r_in, r_kct, r_extt, stim_ls, vt_opt
+    return r_kct, r_extt, stim_ls, vt_opt
 
 
-def first_order_csm(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+def int_cs_alone(t_len, st_times, st_len, r_in, n_batch):
     """ Runs a first-order conditioning interval (CS- alone).
 
     This function can be used for both the conditioning and test intervals
@@ -95,13 +114,18 @@ def first_order_csm(t_len, st_times, st_len, r_in, n_batch, **kwargs):
         t_len = length of task interval (in indices)
         st_times = array of stimulus presentation times for each trial
         stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
+        r_in = input neuron activations (CS- = r_kc, US = r_ext = zeros)
         n_batch = number of trials in batch
+
+    Returns
+        r_kct = Kenyon cell (odor) activity time series
+        r_extt = contextual signal time series
+        stim_ls = conditioned (CS) and unconditioned (US) stimulus time series
+        vt_opt = target readout for interval
     """
 
     # Set odors and context signals for each trial
-    r_kcs, r_ext = r_in
-    r_kc = r_kcs[0]
+    r_kc, r_ext = r_in
     n_kc = r_kc.shape[1]
     n_ext = r_ext.shape[1]
 
@@ -124,79 +148,34 @@ def first_order_csm(t_len, st_times, st_len, r_in, n_batch, **kwargs):
                           time_US.repeat(n_ext, 1, 1))
 
     # Combine the time matrices into a list
-    stim_ls = [[time_CS], time_US]
+    stim_ls = [time_CS, time_US]
 
-    return r_in, r_kct, r_extt, stim_ls, vt_opt
-
-
-def first_order_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
-    """ Runs a first-order test interval (CS+ and target valence).
-
-    This function can be used for both first--order tests and extinction
-    conditioning. This interval must follow an interval with a single odor.
-    i.e. the input r_kc must be of size (n_batch, n_kc)
-
-    Parameters
-        t_len = length of task interval (in indices)
-        st_times = array of stimulus presentation times for each trial
-        stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
-        n_batch = number of trials in batch
-    """
-
-    # Set odors and context signals for each trial
-    r_kcs, r_ext = r_in
-    r_kc = r_kcs[0]
-    n_kc = r_kc.shape[1]
-    n_ext = r_ext.shape[1]
-
-    # Initialize stimulus time matrices
-    time_CS = torch.zeros(n_batch, t_len)
-    time_US = torch.zeros_like(time_CS)
-    vt_opt = torch.zeros_like(time_CS)
-
-    # Set the stimulus step inputs
-    for b in range(n_batch):
-        # Convert stimulus time into range of indices
-        stim_inds = st_times[b] + torch.arange(st_len)
-        # Set the CS input times
-        time_CS[b, stim_inds] = 1
-        # Set the target valence times
-        if r_ext[b, 0] == 1:
-            vt_opt[b, (stim_inds + 1)] = 1
-        else:
-            vt_opt[b, (stim_inds + 1)] = -1
-
-    # Calculate the input neurons' activity time series (KC = CS, ext = US)
-    r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
-                         time_CS.repeat(n_kc, 1, 1))
-    r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
-                          time_US.repeat(n_ext, 1, 1))
-
-    # Combine the time matrices into a list
-    stim_ls = [[time_CS], time_US]
-
-    return r_in, r_kct, r_extt, stim_ls, vt_opt
+    return r_kct, r_extt, stim_ls, vt_opt
 
 
-def extinct_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
-    """ Runs an extinction interval.
+def int_test_cs(t_len, st_times, st_len, r_in, n_batch, f_tar=1.0):
+    """ Runs a conditioning test interval (CS+ and target valence).
 
-    Consists of CS+ stimulus presentation without the relevant US. The
-    extinction test always occurs after a first order test. In this case,
-    the target valence is half that of a first order (CS+) test.
+    This function can be used for both first- and second-order tests, extinction
+    tests as well as extinction conditioning.
 
     Parameters
         t_len = length of task interval (in indices)
         st_times = array of stimulus presentation times for each trial
         stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
+        r_in = input neuron activations (CS+ = r_kc, US = r_ext = zeros)
         n_batch = number of trials in batch
+        f_tar = relative target valence magnitude (used for extinction tests)
+
+    Returns
+        r_kct = Kenyon cell (odor) activity time series
+        r_extt = contextual signal time series
+        stim_ls = conditioned (CS) and unconditioned (US) stimulus time series
+        vt_opt = target readout for interval
     """
 
     # Set odors and context signals for each trial
-    r_kcs, r_ext = r_in
-    r_kc = r_kcs[0]
+    r_kc, r_ext = r_in
     n_kc = r_kc.shape[1]
     n_ext = r_ext.shape[1]
 
@@ -213,9 +192,9 @@ def extinct_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
         time_CS[b, stim_inds] = 1
         # Set the target valence times
         if r_ext[b, 0] == 1:
-            vt_opt[b, (stim_inds + 1)] = 1 / 2
+            vt_opt[b, (stim_inds + 1)] = 1 * f_tar
         else:
-            vt_opt[b, (stim_inds + 1)] = -1 / 2
+            vt_opt[b, (stim_inds + 1)] = -1 * f_tar
 
     # Calculate the input neurons' activity time series (KC = CS, ext = US)
     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
@@ -224,31 +203,36 @@ def extinct_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
                           time_US.repeat(n_ext, 1, 1))
 
     # Combine the time matrices into a list
-    stim_ls = [[time_CS], time_US]
+    stim_ls = [time_CS, time_US]
 
-    return r_in, r_kct, r_extt, stim_ls, vt_opt
+    return r_kct, r_extt, stim_ls, vt_opt
 
 
-def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
-    """ Runs a first-order conditioning interval (CS alone).
+def int_cond_cs2(t_len, st_times, st_len, r_in, n_batch):
+    """ Runs a second-order conditioning interval (CS2, CS1 and target valence).
 
     Parameters
         t_len = length of task interval (in indices)
         st_times = array of stimulus presentation times for each trial
         stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
+        r_in = input neuron activations
+                (CS1 = r_kcs[0], CS2 = r_kcs[1], US = r_ext = zeros)
         n_batch = number of trials in batch
+
+    Returns
+        r_kct = Kenyon cell (odor) activity time series
+        r_extt = contextual signal time series
+        stim_ls = conditioned (CS) and unconditioned (US) stimulus time series
+        vt_opt = target readout for interval
     """
 
     # Set odors and context signals for each trial
     r_kcs, r_ext = r_in
     # The input odor is the second odor presented (CS1)
-    r_kc2 = r_kcs[0]
-    n_kc = r_kc2.shape[1]
+    r_kc1 = r_kcs[0]
+    r_kc2 = r_kcs[1]
+    n_kc = r_kc1.shape[1]
     n_ext = r_ext.shape[1]
-    # Initialize a second odor
-    r_kc1 = torch.zeros_like(r_kc2)
-    n_ones = r_kc2[0, :].sum().int()
 
     # Initialize stimulus time matrices
     time_CS1 = torch.zeros(n_batch, t_len)
@@ -258,17 +242,12 @@ def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
 
     # Set the stimulus step inputs
     for b in range(n_batch):
-        # Shuffle the indices to create a new second odor
-        new_inds = torch.multinomial(torch.ones(n_kc), n_ones)
-        # r_kc1[b, :] = r_kc2[b, new_inds]
-        r_kc1[b, new_inds] = 1
-
         # Convert stimulus time into range of indices
         stim_inds = st_times[b] + torch.arange(st_len)
         # Set the CS1 input times
-        time_CS1[b, stim_inds] = 1
+        time_CS1[b, (stim_inds + st_len)] = 1
         # Set the CS2 input times
-        time_CS2[b, (stim_inds + st_len)] = 1
+        time_CS2[b, stim_inds] = 1
         # Set the target valence
         vt_opt[b, (stim_inds + st_len + 1)] = 1
 
@@ -283,136 +262,383 @@ def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
     # Combine the time matrices into a list
     time_all_CS = [time_CS1, time_CS2]
     stim_ls = [time_all_CS, time_US]
-    r_next = ([r_kc1, r_kc2], r_ext)
 
-    return r_next, r_kct, r_extt, stim_ls, vt_opt
-
-
-def second_order_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
-    """ Runs a first-order test interval (CS+ and target valence).
-
-    This function can be used for both first- and second-order tests, as well
-    as extinction conditioning.
-
-    Parameters
-        t_len = length of task interval (in indices)
-        st_times = array of stimulus presentation times for each trial
-        stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
-        n_batch = number of trials in batch
-    """
-
-    # Set odors and context signals for each trial
-    r_kcs, r_ext = r_in
-    r_kc = r_kcs[1]
-    n_kc = r_kc.shape[1]
-    n_ext = r_ext.shape[1]
-
-    # Initialize stimulus time matrices
-    time_CS1 = torch.zeros(n_batch, t_len)
-    time_CS2 = torch.zeros_like(time_CS1)
-    time_US = torch.zeros_like(time_CS1)
-    vt_opt = torch.zeros_like(time_CS1)
-
-    # Set the stimulus step inputs
-    for b in range(n_batch):
-        # Convert stimulus time into range of indices
-        stim_inds = st_times[b] + torch.arange(st_len)
-        # Set the CS input times
-        time_CS2[b, stim_inds] = 1
-        # Set the target valence times
-        if r_ext[b, 0] == 1:
-            vt_opt[b, (stim_inds + 1)] = 1
-        else:
-            vt_opt[b, (stim_inds + 1)] = -1
-
-    # Calculate the input neurons' activity time series (KC = CS, ext = US)
-    r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
-                         time_CS2.repeat(n_kc, 1, 1))
-    r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
-                          time_US.repeat(n_ext, 1, 1))
-
-    # Combine the time matrices into a list
-    time_all_CS = [time_CS1, time_CS2]
-    stim_ls = [time_all_CS, time_US]
-
-    return r_in, r_kct, r_extt, stim_ls, vt_opt
+    return r_kct, r_extt, stim_ls, vt_opt
 
 
-def no_plasticity_trial(t_len, st_times, st_len, r_in, n_batch, T_stim,
-                        dt, p_ctrl=0., **kwargs):
-    """ Runs a full no-plasticity trial (CS+ and US).
+# def first_order_cond_csp(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs a first-order conditioning interval (CS+ and US).
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#         p_ctrl (kwarg) = fraction of control trials during training
+#         p_csm (kwarg) = fraction of control trials that are CS-
+#     """
+#
+#     # Set odors and context signals for this interval
+#     r_kcs, r_ext = r_in
+#     r_kc = r_kcs[0]
+#     n_kc = r_kc.shape[1]
+#     n_ext = r_ext.shape[1]
+#
+#     # Initialize stimulus time matrices
+#     time_CS = torch.zeros(n_batch, t_len)
+#     time_US = torch.zeros_like(time_CS)
+#     vt_opt = torch.zeros_like(time_CS)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS[b, stim_inds] = 1
+#         # Set the US input times
+#         time_US[b, (stim_inds + st_len)] = 1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
+#                          time_CS.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     stim_ls = [[time_CS], time_US]
+#
+#     return r_in, r_kct, r_extt, stim_ls, vt_opt
 
-    In half of the training trials, the second odor is switched to prevent
-    over-generalization.
 
-    Parameters
-        t_len = length of task interval (in indices)
-        st_times = array of stimulus presentation times for each trial
-        stim_len = length of stimulus presentation (in indices)
-        r_in = input neuron activations (r_kc and r_ext)
-        n_batch = number of trials in batch
-        p_ctrl = fraction of control (generalization) trials
-    """
+# def first_order_csm(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs a first-order conditioning interval (CS- alone).
+#
+#     This function can be used for both the conditioning and test intervals
+#     of CS- trials. Only the CS stimulus is presented.
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#     """
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     r_kc = r_kcs[0]
+#     n_kc = r_kc.shape[1]
+#     n_ext = r_ext.shape[1]
+#
+#     # Initialize stimulus time matrices
+#     time_CS = torch.zeros(n_batch, t_len)
+#     time_US = torch.zeros_like(time_CS)
+#     vt_opt = torch.zeros_like(time_CS)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS[b, stim_inds] = 1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
+#                          time_CS.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     stim_ls = [[time_CS], time_US]
+#
+#     return r_in, r_kct, r_extt, stim_ls, vt_opt
 
-    # Generates a second set of stimulus times for the second presentation
-    st_times2, _ = gen_int_times(n_batch, dt, T_stim, T_range=(20, 30))
 
-    # Set odors and context signals for each trial
-    r_kcs, r_ext = r_in
-    r_kc1 = r_kcs[0]
-    n_kc = r_kc1.shape[1]
-    n_ext = r_ext.shape[1]
-    # Define a second set of odors for generalization trials
-    # r_kc2 = r_kc1.clone()
-    r_kc2 = torch.zeros_like(r_kc1)
-    n_ones = r_kc1[0, :].sum().int()
+# def first_order_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs a first-order test interval (CS+ and target valence).
+#
+#     This function can be used for both first--order tests and extinction
+#     conditioning. This interval must follow an interval with a single odor.
+#     i.e. the input r_kc must be of size (n_batch, n_kc)
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#     """
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     r_kc = r_kcs[0]
+#     n_kc = r_kc.shape[1]
+#     n_ext = r_ext.shape[1]
+#
+#     # Initialize stimulus time matrices
+#     time_CS = torch.zeros(n_batch, t_len)
+#     time_US = torch.zeros_like(time_CS)
+#     vt_opt = torch.zeros_like(time_CS)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS[b, stim_inds] = 1
+#         # Set the target valence times
+#         if r_ext[b, 0] == 1:
+#             vt_opt[b, (stim_inds + 1)] = 1
+#         else:
+#             vt_opt[b, (stim_inds + 1)] = -1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
+#                          time_CS.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     stim_ls = [[time_CS], time_US]
+#
+#     return r_in, r_kct, r_extt, stim_ls, vt_opt
 
-    # Initialize stimulus time matrices
-    time_CS1 = torch.zeros(n_batch, t_len)
-    time_CS2 = torch.zeros_like(time_CS1)
-    time_US = torch.zeros_like(time_CS1)
-    vt_opt = torch.zeros_like(time_CS1)
 
-    # Determine whether CS+ is switched for a novel odor
-    switch_inds = torch.rand(n_batch) < p_ctrl
+# def extinct_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs an extinction interval.
+#
+#     Consists of CS+ stimulus presentation without the relevant US. The
+#     extinction test always occurs after a first order test. In this case,
+#     the target valence is half that of a first order (CS+) test.
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#     """
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     r_kc = r_kcs[0]
+#     n_kc = r_kc.shape[1]
+#     n_ext = r_ext.shape[1]
+#
+#     # Initialize stimulus time matrices
+#     time_CS = torch.zeros(n_batch, t_len)
+#     time_US = torch.zeros_like(time_CS)
+#     vt_opt = torch.zeros_like(time_CS)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS[b, stim_inds] = 1
+#         # Set the target valence times
+#         if r_ext[b, 0] == 1:
+#             vt_opt[b, (stim_inds + 1)] = 1 / 2
+#         else:
+#             vt_opt[b, (stim_inds + 1)] = -1 / 2
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
+#                          time_CS.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     stim_ls = [[time_CS], time_US]
+#
+#     return r_in, r_kct, r_extt, stim_ls, vt_opt
 
-    # Set the stimulus step inputs
-    for b in range(n_batch):
-        # Convert stimulus time into range of indices
-        stim_inds1 = st_times[b] + torch.arange(st_len)
-        stim_inds2 = st_times2[b] + torch.arange(st_len)
-        # Set the CS input times
-        time_CS1[b, stim_inds1] = 1
 
-        # If it is a control trial, switch the odor (target valence is zero)
-        if switch_inds[b]:
-            time_CS2[b, stim_inds2] = 1
-            new_inds = torch.multinomial(torch.ones(n_kc), n_ones)
-            # r_kc2[b, :] = r_kc1[b, new_inds]
-            r_kc2[b, new_inds] = 1
-        # If the odor is not switched, set the target valence
-        else:
-            time_CS1[b, stim_inds2] = 1
-            if r_ext[b, 0] == 1:
-                vt_opt[b, (stim_inds2 + 1)] = 1
-            else:
-                vt_opt[b, (stim_inds2 + 1)] = -1
+# def second_order_cond(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs a first-order conditioning interval (CS alone).
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#     """
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     # The input odor is the second odor presented (CS1)
+#     r_kc2 = r_kcs[0]
+#     n_kc = r_kc2.shape[1]
+#     n_ext = r_ext.shape[1]
+#     # Initialize a second odor
+#     r_kc1 = torch.zeros_like(r_kc2)
+#     n_ones = r_kc2[0, :].sum().int()
+#
+#     # Initialize stimulus time matrices
+#     time_CS1 = torch.zeros(n_batch, t_len)
+#     time_CS2 = torch.zeros_like(time_CS1)
+#     time_US = torch.zeros_like(time_CS1)
+#     vt_opt = torch.zeros_like(time_CS1)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Shuffle the indices to create a new second odor
+#         new_inds = torch.multinomial(torch.ones(n_kc), n_ones)
+#         # r_kc1[b, :] = r_kc2[b, new_inds]
+#         r_kc1[b, new_inds] = 1
+#
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS1 input times
+#         time_CS1[b, stim_inds] = 1
+#         # Set the CS2 input times
+#         time_CS2[b, (stim_inds + st_len)] = 1
+#         # Set the target valence
+#         vt_opt[b, (stim_inds + st_len + 1)] = 1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc1,
+#                          time_CS1.repeat(n_kc, 1, 1))
+#     r_kct += torch.einsum('bm, mbt -> bmt', r_kc2,
+#                           time_CS2.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     time_all_CS = [time_CS1, time_CS2]
+#     stim_ls = [time_all_CS, time_US]
+#     r_next = ([r_kc1, r_kc2], r_ext)
+#
+#     return r_next, r_kct, r_extt, stim_ls, vt_opt
 
-    # Calculate the input neurons' activity time series (KC = CS, ext = US)
-    r_kct = torch.einsum('bm, mbt -> bmt', r_kc1,
-                         time_CS1.repeat(n_kc, 1, 1))
-    r_kct += torch.einsum('bm, mbt -> bmt', r_kc2,
-                          time_CS2.repeat(n_kc, 1, 1))
-    r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
-                          time_US.repeat(n_ext, 1, 1))
 
-    # Combine the time matrices into a list
-    time_all_CS = [time_CS1, time_CS2]
-    stim_ls = [time_all_CS, time_US]
-    r_next = ([r_kc1, r_kc2], r_ext)
+# def second_order_test(t_len, st_times, st_len, r_in, n_batch, **kwargs):
+#     """ Runs a first-order test interval (CS+ and target valence).
+#
+#     This function can be used for both first- and second-order tests, as well
+#     as extinction conditioning.
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#     """
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     r_kc = r_kcs[1]
+#     n_kc = r_kc.shape[1]
+#     n_ext = r_ext.shape[1]
+#
+#     # Initialize stimulus time matrices
+#     time_CS1 = torch.zeros(n_batch, t_len)
+#     time_CS2 = torch.zeros_like(time_CS1)
+#     time_US = torch.zeros_like(time_CS1)
+#     vt_opt = torch.zeros_like(time_CS1)
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds = st_times[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS2[b, stim_inds] = 1
+#         # Set the target valence times
+#         if r_ext[b, 0] == 1:
+#             vt_opt[b, (stim_inds + 1)] = 1
+#         else:
+#             vt_opt[b, (stim_inds + 1)] = -1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc,
+#                          time_CS2.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     time_all_CS = [time_CS1, time_CS2]
+#     stim_ls = [time_all_CS, time_US]
+#
+#     return r_in, r_kct, r_extt, stim_ls, vt_opt
 
-    return r_next, r_kct, r_extt, stim_ls, vt_opt
+
+# def no_plasticity_trial(t_len, st_times, st_len, r_in, n_batch, T_stim,
+#                         dt, p_ctrl=0., **kwargs):
+#     """ Runs a full no-plasticity trial (CS+ and US).
+#
+#     In half of the training trials, the second odor is switched to prevent
+#     over-generalization.
+#
+#     Parameters
+#         t_len = length of task interval (in indices)
+#         st_times = array of stimulus presentation times for each trial
+#         stim_len = length of stimulus presentation (in indices)
+#         r_in = input neuron activations (r_kc and r_ext)
+#         n_batch = number of trials in batch
+#         p_ctrl = fraction of control (generalization) trials
+#     """
+#
+#     # Generates a second set of stimulus times for the second presentation
+#     st_times2, _ = gen_int_times(n_batch, dt, T_stim, T_range=(20, 30))
+#
+#     # Set odors and context signals for each trial
+#     r_kcs, r_ext = r_in
+#     r_kc1 = r_kcs[0]
+#     n_kc = r_kc1.shape[1]
+#     n_ext = r_ext.shape[1]
+#     # Define a second set of odors for generalization trials
+#     # r_kc2 = r_kc1.clone()
+#     r_kc2 = torch.zeros_like(r_kc1)
+#     n_ones = r_kc1[0, :].sum().int()
+#
+#     # Initialize stimulus time matrices
+#     time_CS1 = torch.zeros(n_batch, t_len)
+#     time_CS2 = torch.zeros_like(time_CS1)
+#     time_US = torch.zeros_like(time_CS1)
+#     vt_opt = torch.zeros_like(time_CS1)
+#
+#     # Determine whether CS+ is switched for a novel odor
+#     switch_inds = torch.rand(n_batch) < p_ctrl
+#
+#     # Set the stimulus step inputs
+#     for b in range(n_batch):
+#         # Convert stimulus time into range of indices
+#         stim_inds1 = st_times[b] + torch.arange(st_len)
+#         stim_inds2 = st_times2[b] + torch.arange(st_len)
+#         # Set the CS input times
+#         time_CS1[b, stim_inds1] = 1
+#
+#         # If it is a control trial, switch the odor (target valence is zero)
+#         if switch_inds[b]:
+#             time_CS2[b, stim_inds2] = 1
+#             new_inds = torch.multinomial(torch.ones(n_kc), n_ones)
+#             # r_kc2[b, :] = r_kc1[b, new_inds]
+#             r_kc2[b, new_inds] = 1
+#         # If the odor is not switched, set the target valence
+#         else:
+#             time_CS1[b, stim_inds2] = 1
+#             if r_ext[b, 0] == 1:
+#                 vt_opt[b, (stim_inds2 + 1)] = 1
+#             else:
+#                 vt_opt[b, (stim_inds2 + 1)] = -1
+#
+#     # Calculate the input neurons' activity time series (KC = CS, ext = US)
+#     r_kct = torch.einsum('bm, mbt -> bmt', r_kc1,
+#                          time_CS1.repeat(n_kc, 1, 1))
+#     r_kct += torch.einsum('bm, mbt -> bmt', r_kc2,
+#                           time_CS2.repeat(n_kc, 1, 1))
+#     r_extt = torch.einsum('bm, mbt -> bmt', r_ext,
+#                           time_US.repeat(n_ext, 1, 1))
+#
+#     # Combine the time matrices into a list
+#     time_all_CS = [time_CS1, time_CS2]
+#     stim_ls = [time_all_CS, time_US]
+#     r_next = ([r_kc1, r_kc2], r_ext)
+#
+#     return r_next, r_kct, r_extt, stim_ls, vt_opt
 
 
 def continual_trial(t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):

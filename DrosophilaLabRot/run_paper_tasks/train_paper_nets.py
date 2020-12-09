@@ -8,8 +8,7 @@ from network_classes.paper_tasks.continual_rnn import ContinualRNN
 from common.common import *
 
 # Define the path for saving the trained networks and loss plots
-net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
-           'DrosophilaLabRot/data_store/paper_nets/'
+net_path = '/data_store/paper_nets/'
 
 # Set the training and plotting parameters
 net_type = input('Input network type (first, all_classic, no_plast or '

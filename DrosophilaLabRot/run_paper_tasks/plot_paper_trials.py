@@ -7,8 +7,7 @@ from common.common import *
 from common.plotting import *
 
 # Define the path for saving the trained networks and loss plots
-net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
-           'DrosophilaLabRot/data_store/paper_nets/'
+net_path = '/data_store/paper_nets/'
 
 # Set the training and plotting parameters
 man_input = input('Manually select the trial to plot? y/n ')
