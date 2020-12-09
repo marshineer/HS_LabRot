@@ -1,5 +1,5 @@
 # Import the required packages
-from network_classes.paper_extensions.knockout_recur import NoRecurFirstO, \
+from not_used.paper_extensions.knockout_recur import NoRecurFirstO, \
     NoRecurContinual, NoRecurExtended
 from common.common import *
 from common.plotting import *
@@ -23,23 +23,24 @@ fsuff = input('Enter a custom filename suffix, if desired: ')
 T_int = int(input('Input length of training interval: '))
 T_stim = int(input('Input length of stimulus presentation: '))
 n_ep = int(input('Input number of epochs network was trained for: '))
+n_hop = int(input('Input number of hops in network: '))
 
 # Load the network
 if net_type == '1':
-    network = NoRecurFirstO(T_int=T_int)
+    network = NoRecurFirstO(T_int=T_int, T_stim=T_stim, n_hop=n_hop)
     net_fname = 'trained_knockout_fo_{}ep'.format(n_ep)
 if net_type == '2':
-    network = NoRecurExtended(T_int=T_int)
+    network = NoRecurExtended(T_int=T_int, T_stim=T_stim, n_hop=n_hop)
     net_fname = 'trained_knockout_ac_{}ep'.format(n_ep)
 if net_type == '3':
-    network = NoRecurExtended(T_int=T_int)
+    network = NoRecurExtended(T_int=T_int, T_stim=T_stim, n_hop=n_hop)
     net_fname = 'trained_knockout_so_{}ep'.format(n_ep)
 elif net_type == '4':
     n_stim_avg = int(input('Input average number of stimulus'
                            'presentations: '))
     n_stim = int(input('Input number of odors per trial: '))
     network = NoRecurContinual(n_trial_avg=n_stim_avg, n_trial_odors=n_stim,
-                               T_int=T_int, T_stim=T_stim)
+                               T_int=T_int, T_stim=T_stim, n_hop=n_hop)
     net_fname = 'trained_knockout_cl_{}stim_{}avg_{}ep'.format(n_stim,
                                                                n_stim_avg,
                                                                n_ep)

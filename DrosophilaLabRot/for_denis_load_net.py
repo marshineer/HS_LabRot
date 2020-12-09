@@ -1,7 +1,6 @@
 # Import the required packages
 import torch.optim as optim
-from network_classes.paper_extensions.knockout_recur import NoRecurFirstO, \
-    NoRecurContinual, NoRecurExtended
+from not_used.paper_extensions.knockout_recur import NoRecurExtended
 from common.common import *
 from common.plotting import *
 

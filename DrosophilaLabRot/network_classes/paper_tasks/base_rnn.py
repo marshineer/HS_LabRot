@@ -98,7 +98,8 @@ class FirstOrderCondRNN(nn.Module):
             self.W_ext = nn.Parameter(torch.randn(n_fbn, n_ext),
                                       requires_grad=True)
 
-    def forward(self, r_kc, r_ext, time, n_batch=30, W0=None, r0=None, **kwargs):
+    def forward(self, r_kc, r_ext, time, n_batch=30, W0=None, r0=None,
+                ud_wts=True, ko_wts=None, **kwargs):
         """ Defines the forward pass of the RNN
 
         The KC->MBON weights are constrained to the range [0, 0.05].
@@ -114,6 +115,10 @@ class FirstOrderCondRNN(nn.Module):
             n_batch = number of trials in mini-batch
             W0 = initial weights for KC->MBON connections
             r0 = initial activities for output circuitry neurons
+            ud_wts = indicate whether to update dynamic weights
+                True: KC->MBON plasticity is on
+                False: KC->MBON plasticity turned off
+            ko_wts = list of MBONs to be knocked out
 
         Returns
             r_recur: list of torch.ndarray(batch_size, n_mbon + n_fbn + n_dan)
@@ -125,6 +130,8 @@ class FirstOrderCondRNN(nn.Module):
         """
 
         # Define the time step of the simulation
+        if ko_wts is None:
+            ko_wts = []
         dt = np.diff(time)[0]
 
         # Initialize output circuit firing rates for each trial
@@ -152,6 +159,9 @@ class FirstOrderCondRNN(nn.Module):
             W_recur[:, self.n_mbon:(self.n_mbon + self.n_fbn)] = 0
         elif self.n_hop == 2:
             W_recur[:(self.n_mbon + self.n_fbn), -(self.n_dan + self.n_fbn):] = 0
+        # Knockout specified weights
+        for n in ko_wts:
+            W_recur[:, n] = 0
 
         # Initialize the KC->MBON weights
         W_kc_mbon = [W0[0]]
@@ -185,9 +195,11 @@ class FirstOrderCondRNN(nn.Module):
             r_recur.append(r_recur[-1] + dr * dt)
 
             # Update KC->MBON plasticity variables
-            wt_out = self.wt_update(W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan,
-                                    r_kc[:, :, t], r_recur[-1][:, -self.n_dan:],
-                                    n_batch, **kwargs)
+            if ud_wts:
+                r_dan_dt = r_recur[-1][:, -self.n_dan:]
+                wt_out = self.wt_update(W_kc_mbon, wt, dt, r_bar_kc, r_bar_dan,
+                                        r_kc[:, :, t], r_dan_dt, n_batch,
+                                        **kwargs)
             r_bar_kc, r_bar_dan = wt_out
 
             # Calculate the readout (see Eq. 2)
@@ -369,7 +381,7 @@ class FirstOrderCondRNN(nn.Module):
 
         return W_in
 
-    def gen_inputs(self, T_vars, n_batch, p_omit=0.3):
+    def gen_inputs(self, T_vars, n_batch, p_omit=0.3, **kwargs):
         """ Generates inputs for first-order conditioning tasks.
 
         All trials are either CS+, CS- (US omitted) or CS omitted (control trials
@@ -470,7 +482,7 @@ class FirstOrderCondRNN(nn.Module):
         return r_kct_ls, r_extt_ls, vt_opt, ls_stims
 
     def run_eval(self, trial_ls, *, T_int=None, T_stim=None, dt=None, n_trial=1,
-                 n_batch=1, reset_wts=True, **kwargs):
+                 n_batch=1, reset_wts=True, save_data=False, **kwargs):
         """ Runs an evaluation based on a series of input functions
 
         Parameters
@@ -481,6 +493,7 @@ class FirstOrderCondRNN(nn.Module):
             n_trial = number of trials to run
             n_batch = number of parallel trials in a batch
             reset_wts = indicates whether to reset weights between trials
+            save_all_data = save data for each trial, or just the last
         """
 
         # Reset lists storing evaluation data
@@ -539,14 +552,15 @@ class FirstOrderCondRNN(nn.Module):
                 st_times, st_len = gen_int_times(n_batch, dt, T_stim, **kwargs)
 
                 # Select the interval function to run
-                int_fnc = trial_ls[i]
+                int_fnc, wt_args = trial_ls[i]
                 # Calculate the interval inputs
                 f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch,
                                T_stim=T_stim, dt=dt, **kwargs)
                 r_in, r_kct, r_extt, stim_ls, vt_opt = f_in
 
                 # Run the forward pass
-                net_out = self(r_kct, r_extt, time_int, n_batch, W_in)
+                net_out = self(r_kct, r_extt, time_int, n_batch, W_in,
+                               **wt_args,  **kwargs)
                 rt_int, (Wt_int, wt_int), vt_int = net_out
                 # Pass the KC->MBON weights to the next interval
                 W_in = (Wt_int[-1], wt_int[-1])
@@ -569,16 +583,8 @@ class FirstOrderCondRNN(nn.Module):
             #     # self.eval_odors.append(r_kc)
             #     self.eval_odors.append(trial_odors)
 
-            # Convert the lists of time point values to a tensor,
-            # time is the last dimension
-            self.eval_rts.append(torch.stack(rts, dim=-1).detach())
-            self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
-            self.eval_wts.append(torch.stack(wts, dim=-1).detach())
-            self.eval_vts.append(torch.stack(vts, dim=-1).detach())
-            self.eval_vt_opts.append(torch.cat(vt_opts, dim=-1).detach())
-
             # Concatenate time lists to store
-            trial_CSs = []
+            trial_CS = []
             for i in range(max_num_CS):
                 CS_vec = torch.zeros(n_batch, t_len * n_int)
                 for j in range(n_int):
@@ -586,8 +592,8 @@ class FirstOrderCondRNN(nn.Module):
                         CS_vec[:, j * t_len:(j + 1) * t_len] = time_CS[j][i]
                     except IndexError:
                         pass
-                trial_CSs.append(CS_vec)
-            trial_USs = []
+                trial_CS.append(CS_vec)
+            trial_US = []
             for i in range(max_num_US):
                 US_vec = torch.zeros(n_batch, t_len * n_int)
                 for j in range(n_int):
@@ -595,13 +601,30 @@ class FirstOrderCondRNN(nn.Module):
                         US_vec[:, j * t_len:(j + 1) * t_len] = time_US[j][i]
                     except IndexError:
                         pass
-                trial_USs.append(US_vec)
+                trial_US.append(US_vec)
 
-            # Store the time series lists
-            self.eval_CS_stim.append(trial_CSs)
-            self.eval_US_stim.append(trial_USs)
+            # Convert the lists of time point values to a tensor,
+            # time is the last dimension
+            if save_data:
+                self.eval_rts.append(torch.stack(rts, dim=-1).detach())
+                self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
+                self.eval_wts.append(torch.stack(wts, dim=-1).detach())
+                self.eval_vts.append(torch.stack(vts, dim=-1).detach())
+                self.eval_vt_opts.append(torch.cat(vt_opts, dim=-1).detach())
+                # Store the time series lists
+                self.eval_CS_stim.append(trial_CS)
+                self.eval_US_stim.append(trial_US)
+            else:
+                self.eval_rts = [torch.stack(rts, dim=-1).detach()]
+                self.eval_Wts = [torch.stack(Wts, dim=-1).detach()]
+                self.eval_wts = [torch.stack(wts, dim=-1).detach()]
+                self.eval_vts = [torch.stack(vts, dim=-1).detach()]
+                self.eval_vt_opts = [torch.cat(vt_opts, dim=-1).detach()]
+                # Store the time series lists
+                self.eval_CS_stim = [trial_CS]
+                self.eval_US_stim = [trial_US]
 
-            # Save the loss
+            # Always save the loss for all trials
             loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
                              self.eval_rts[-1][:, -self.n_dan:, :])
             self.eval_loss.append(loss.item())
