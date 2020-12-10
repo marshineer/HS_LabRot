@@ -1,10 +1,6 @@
 # Import the required packages
-import numpy as np
-import torch.nn as nn
-from torch.autograd import Variable
 import torch.optim as optim
 from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
-from common.common import *
 from common.plotting import *
 from common.common import *
 
@@ -36,9 +32,9 @@ def trial_fnc_ex(net, W_in, T_vars, n_batch, **kwargs):
     n_int = len(int_list)
     r_in_list = [(r_kc_csp, r_ext),
                  (r_kc_csm, r_ext_zeros),
-                 ([r_kc_csp, r_kc_csp], r_ext_zeros),
-                 ([r_kc_csm, r_kc_csm], r_ext_zeros),
-                 (r_kc_csp, r_ext_zeros),
+                 ([r_kc_csp, r_kc_csp], r_ext),
+                 ([r_kc_csm, r_kc_csm], r_ext),
+                 (r_kc_csp, r_ext),
                  (r_kc_csm, r_ext_zeros),
                  (r_kc_novel, r_ext_zeros)]
     # These are the default values, so we don't need to include them,

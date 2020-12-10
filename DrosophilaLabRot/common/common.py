@@ -190,7 +190,7 @@ def int_test_cs(t_len, st_times, st_len, r_in, n_batch, f_tar=1.0):
         stim_inds = st_times[b] + torch.arange(st_len)
         # Set the CS input times
         time_CS[b, stim_inds] = 1
-        # Set the target valence times
+        # Set the target valence
         if r_ext[b, 0] == 1:
             vt_opt[b, (stim_inds + 1)] = 1 * f_tar
         else:
@@ -249,7 +249,11 @@ def int_cond_cs2(t_len, st_times, st_len, r_in, n_batch):
         # Set the CS2 input times
         time_CS2[b, stim_inds] = 1
         # Set the target valence
-        vt_opt[b, (stim_inds + st_len + 1)] = 1
+        # vt_opt[b, (stim_inds + st_len + 1)] = 1
+        if r_ext[b, 0] == 1:
+            vt_opt[b, (stim_inds + st_len + 1)] = 1
+        else:
+            vt_opt[b, (stim_inds + st_len + 1)] = -1
 
     # Calculate the input neurons' activity time series (KC = CS, ext = US)
     r_kct = torch.einsum('bm, mbt -> bmt', r_kc1,
