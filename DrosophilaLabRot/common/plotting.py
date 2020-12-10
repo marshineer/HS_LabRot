@@ -96,7 +96,7 @@ def plot_given(network, plt_ttl, plt_lbl, **kwargs):
     vt_opt = network.eval_vt_opts[-1].numpy().squeeze()
     CS_list = network.eval_CS_stim[-1]
     US_list = network.eval_US_stim[-1]
-    plot_time = np.zeros(US_list[0].numpy().squeeze().shape)
+    plot_time = np.arange(US_list[0].numpy().squeeze().size) * network.dt
 
     # Plot the conditioning and test
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True,
@@ -120,7 +120,7 @@ def plot_given(network, plt_ttl, plt_lbl, **kwargs):
     ax2.set_ylabel('Normalized MBON Activity', fontsize=label_font)
     ax2.set_yticks([])
     fig.tight_layout()
-    # plt.show()
+    plt.show()
 
     # Return the figure
     return fig
