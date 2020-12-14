@@ -128,6 +128,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Project folders
+# Project files and folders
 DrosophilaLabRot/not_used/
 old/
+sync_to_cluster.sh

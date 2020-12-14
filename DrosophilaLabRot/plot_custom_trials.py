@@ -51,7 +51,7 @@ network.load_state_dict(torch.load(fname))
 
 # Plot trials for trained networks
 if net_type == '1':
-    # First-order conditioning with no recurrence
+    # First-order conditioning
     if plot_type == 'CS+':
         trial_ls = [first_order_cond_csp, first_order_test]
         plt_fname = 'knockout_fo_csp_{}ep'.format(n_ep)
@@ -63,7 +63,7 @@ if net_type == '1':
         plt_ttl = 'First-order (No Recurrence) Conditioning (CS-)'
         plt_lbl = (['CS-'], ['US'])
 elif net_type == '2':
-    # All classical conditioning with no recurrence
+    # All classical conditioning
     if plot_type == 'ext':
         trial_ls = [first_order_cond_csp, first_order_test, extinct_test]
         plt_fname = 'knockout_all_ex_{}ep'.format(n_ep)
@@ -75,13 +75,13 @@ elif net_type == '2':
         plt_ttl = 'Second-order (No Recurrence) Conditioning'
         plt_lbl = (['CS1', 'CS2'], ['US'])
 elif net_type == '3':
-    # Second-order conditioning with no recurrence
+    # Second-order conditioning
     trial_ls = [first_order_cond_csp, second_order_cond, second_order_test]
     plt_fname = 'knockout_so_{}ep'.format(n_ep)
     plt_ttl = 'Second-order (No Recurrence) Conditioning'
     plt_lbl = (['CS1', 'CS2'], ['US'])
 elif net_type == '4':
-    # Continual learning with no recurrence
+    # Continual learning
     trial_ls = [continual_trial]
     plt_fname = 'knockout_cl_{}stim_{}avg_{}ep'.format(n_stim, n_stim_avg, n_ep)
     plt_ttl = 'Continual Learning (No Recurrence)'

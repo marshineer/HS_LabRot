@@ -9,7 +9,7 @@ class ExtendedCondRNN(FirstOrderCondRNN):
         # Set the number of task intervals
         self.n_int = 3
 
-    def gen_inputs(self, T_vars, n_batch, p_omit=0.5, p_extinct=0.5):
+    def gen_inputs(self, T_vars, n_batch, p_omit=0.5, p_extinct=0.5, **kwargs):
         """ Generates inputs for extinction and second-order tasks.
 
         Trials are either extinction or second-order conditioning. No strictly

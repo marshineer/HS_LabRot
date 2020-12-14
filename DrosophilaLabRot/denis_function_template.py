@@ -3,11 +3,30 @@ import torch.optim as optim
 from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
 from common.plotting import *
 from common.common import *
+import os
 
 
 def trial_fnc_ex(net, W_in, T_vars, n_batch, **kwargs):
     """
 
+    Parameters
+        net = trained network to evaluate
+        W_in = initial weights to the trial
+        T_vars: Tuple
+            T_vars[0] = T_int = length of trial (in seconds)
+            T_vars[1] = T_stim = length of time each stimulus is presented
+            T_vars[2] = dt = time step of simulations
+        n_batch = number of trials in mini-batch
+
+    Returns
+        rts_trial = recurrent neuron activities for the trial
+        Wts_trial = KC->MBON weights at the end of the trial
+        wts_trial = plasticity variable for KC->MBON weights at end of trial
+        vt_trial = MBON readout (valence) for the trial
+        vt_opt_trial = target MBON valence for the trial
+        err_trial = average error in valence for the entire trial (scalar)
+        trial_odors = list of odors used in trial
+        stim_list = list of stimulus time vectors
     """
 
     # Set the time variables
@@ -100,8 +119,10 @@ def trial_fnc_ex(net, W_in, T_vars, n_batch, **kwargs):
             time_CS_novel[:, i * t_len:(i + 1) * t_len] = time_zeros
         # Store US time series
         time_US[:, i * t_len:(i + 1) * t_len] = stim_ls[1]
-        time_all_CS = [time_CSp, time_CSm, time_CS_novel]
-        stim_list = [time_all_CS, time_US]
+
+    # Save stimuli time series
+    time_all_CS = [time_CSp, time_CSm, time_CS_novel]
+    stim_list = [time_all_CS, time_US]
 
     # Calculate the trial error
     vt_trial = torch.stack(vts, dim=-1).detach()
@@ -131,8 +152,8 @@ lr = 0.001
 optimizer = optim.RMSprop(network.parameters(), lr=lr)
 
 # Load the network (you will have to set the absolute path)
-net_path = '/home/marshineer/Dropbox/Ubuntu/lab_rotations/sprekeler/' \
-           'DrosophilaLabRot/data_store/extension_nets/'
+dir_path = os.path.dirname(__file__)
+net_path = dir_path + '/data_store/extension_nets/'
 # This is the filename for trained networks where recurrence is knocked out
 # The "so" indicates that it is trained only on second-order tasks
 # For other files:
@@ -153,12 +174,9 @@ plt_ttl = 'Second-order (No Recurrence) Conditioning'
 plt_lbl = (['CS+', 'CS-', 'Novel CS'], ['US'])
 
 # Plot the trial
-T_vars = (network.T_int, network.T_stim, network.dt)
 fig = plot_given(network, plt_ttl, plt_lbl, pos_vt=None)
 
 # Save the losses plot
 plot_path = net_path + 'trial_plots/' + plt_fname + '_trial.png'
 if save_plot == 'y':
     fig.savefig(plot_path, bbox_inches='tight')
-
-print(network.eval_vts[0].shape)

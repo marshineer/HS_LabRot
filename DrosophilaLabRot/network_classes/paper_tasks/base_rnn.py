@@ -119,7 +119,7 @@ class FirstOrderCondRNN(nn.Module):
             ud_wts = indicate whether to update dynamic weights
                 True: KC->MBON plasticity is on
                 False: KC->MBON plasticity turned off
-            ko_wts = list of MBONs to be knocked out
+            ko_wts = list of MBON indices to be knocked out
 
         Returns
             r_recur: list of torch.ndarray(batch_size, n_mbon + n_fbn + n_dan)
@@ -143,7 +143,6 @@ class FirstOrderCondRNN(nn.Module):
 
         # Initialize the eligibility traces and readout
         r_bar_kc = r_kc[:, :, 0]
-        print(r_recur[-1].shape)
         r_bar_dan = r_recur[-1][:, -self.n_dan:]
         readout = [torch.einsum('bom, bm -> bo',
                                 self.W_readout.repeat(n_batch, 1, 1),
@@ -246,7 +245,8 @@ class FirstOrderCondRNN(nn.Module):
 
         return r_bar_kc, r_bar_dan
 
-    def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, **kwargs):
+    def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, ltp=True,
+                **kwargs):
         """ Calculates the dynamic weight update (see Eq 4).
 
         Parameters
@@ -255,6 +255,9 @@ class FirstOrderCondRNN(nn.Module):
             r_kc = current activity of Kenyon cells
             r_dan = current activity of dopamine cells
             n_batch = number of trials in mini-batch
+            ltp = indicates whether to include LTP and LTD, or just LTD
+                True: calculates both LTD and LTP
+                False: only calculates LTD
 
         Returns
             update to dynamic plasticity variables wt
@@ -264,7 +267,10 @@ class FirstOrderCondRNN(nn.Module):
         prod1 = torch.einsum('bd, bk -> bdk', r_bar_dan, r_kc)
         prod2 = torch.einsum('bd, bk -> bdk', r_dan, r_bar_kc)
 
-        return prod1 - prod2
+        if ltp:
+            return prod1 - prod2
+        else:
+            return -prod2
 
     def run_train(self, opti, *, T_int=None, T_stim=None, dt=None, n_epoch=5000,
                   n_batch=30, reset_wts=True, clip=0.001, **kwargs):
@@ -555,154 +561,6 @@ class FirstOrderCondRNN(nn.Module):
                 # Store the time series lists
                 self.eval_CS_stim = [stim[0]]
                 self.eval_US_stim = [stim[1]]
-
-    # def run_eval(self, trial_ls, *, T_int=None, T_stim=None, dt=None, n_trial=1,
-    #              n_batch=1, reset_wts=True, save_data=False, **kwargs):
-    #     """ Runs an evaluation based on a series of input functions
-    #
-    #     Parameters
-    #         trial_ls = list of interval functions that compose a trial
-    #         T_int = length of a task interval (in seconds)
-    #         T_stim = length of time each stimulus is presented
-    #         dt = time step of simulation (in seconds)
-    #         n_trial = number of trials to run
-    #         n_batch = number of parallel trials in a batch
-    #         reset_wts = indicates whether to reset weights between trials
-    #         save_all_data = save data for each trial, or just the last
-    #     """
-    #
-    #     # Reset lists storing evaluation data
-    #     self.eval_rts = []
-    #     self.eval_Wts = []
-    #     self.eval_wts = []
-    #     self.eval_vts = []
-    #     self.eval_vt_opts = []
-    #     self.eval_CS_stim = []
-    #     self.eval_US_stim = []
-    #     self.eval_loss = []
-    #
-    #     # Set the time variables
-    #     if T_int is None:
-    #         T_int = self.T_int
-    #     if T_stim is None:
-    #         T_stim = self.T_stim
-    #     if dt is None:
-    #         dt = self.dt
-    #     time_int = torch.arange(0, T_int + dt / 10, dt)
-    #     t_len = time_int.shape[0]
-    #     n_int = len(trial_ls)
-    #
-    #     # Initialize the KC-MBON weights and plasticity variable
-    #     W_in = None
-    #
-    #     # For each function in the list, run an interval
-    #     # All intervals together compose a single trial
-    #     for trial in range(n_trial):
-    #         # Lists to store activities, weights, readouts and target valences
-    #         rts = []
-    #         Wts = []
-    #         wts = []
-    #         vts = []
-    #         vt_opts = []
-    #         time_CS = []
-    #         time_US = []
-    #
-    #         # Determine whether to reset KC->MBON weights between trials
-    #         if reset_wts or (W_in is None):
-    #             W_in = self.init_w_kc_mbon(None, n_batch, (trial, n_trial))
-    #         else:
-    #             W_in = (W_in[0][-1].detach(), W_in[1][-1].detach())
-    #
-    #         # Generate odors and context (odor = KC = CS, context = ext = US)
-    #         r_kc0, r_ext0 = self.gen_r_kc_ext(n_batch, **kwargs)
-    #         trial_odors = [r_kc0]
-    #         r_in = ([r_kc0], r_ext0)
-    #
-    #         # Store the max number of CS stimuli across all intervals
-    #         max_num_CS = 1
-    #         max_num_US = 1
-    #
-    #         for i in range(n_int):
-    #             # Calculate the CS stimulus presentation times
-    #             st_times, st_len = gen_int_times(n_batch, dt, T_stim, **kwargs)
-    #
-    #             # Select the interval function to run
-    #             int_fnc, wt_args = trial_ls[i]
-    #             # Calculate the interval inputs
-    #             f_in = int_fnc(t_len, st_times, st_len, r_in, n_batch,
-    #                            T_stim=T_stim, dt=dt, **kwargs)
-    #             r_in, r_kct, r_extt, stim_ls, vt_opt = f_in
-    #
-    #             # Run the forward pass
-    #             net_out = self(r_kct, r_extt, time_int, n_batch, W_in,
-    #                            **wt_args,  **kwargs)
-    #             rt_int, (Wt_int, wt_int), vt_int = net_out
-    #             # Pass the KC->MBON weights to the next interval
-    #             W_in = (Wt_int[-1], wt_int[-1])
-    #
-    #             # Append the interval outputs to lists
-    #             rts += rt_int
-    #             Wts += Wt_int
-    #             wts += wt_int
-    #             vts += vt_int
-    #             vt_opts.append(vt_opt)
-    #             time_CS.append(stim_ls[0])
-    #             time_US.append(stim_ls[1])
-    #
-    #             # Update max number of CS
-    #             max_num_CS = max(max_num_CS, len(stim_ls[0]))
-    #             max_num_US = max(max_num_US, len(stim_ls[1]))
-    #
-    #         # # If the odors are not static for all trials, save odors
-    #         # if not self.static_odors:
-    #         #     # self.eval_odors.append(r_kc)
-    #         #     self.eval_odors.append(trial_odors)
-    #
-    #         # Concatenate time lists to store
-    #         trial_CS = []
-    #         for i in range(max_num_CS):
-    #             CS_vec = torch.zeros(n_batch, t_len * n_int)
-    #             for j in range(n_int):
-    #                 try:
-    #                     CS_vec[:, j * t_len:(j + 1) * t_len] = time_CS[j][i]
-    #                 except IndexError:
-    #                     pass
-    #             trial_CS.append(CS_vec)
-    #         trial_US = []
-    #         for i in range(max_num_US):
-    #             US_vec = torch.zeros(n_batch, t_len * n_int)
-    #             for j in range(n_int):
-    #                 try:
-    #                     US_vec[:, j * t_len:(j + 1) * t_len] = time_US[j][i]
-    #                 except IndexError:
-    #                     pass
-    #             trial_US.append(US_vec)
-    #
-    #         # Convert the lists of time point values to a tensor,
-    #         # time is the last dimension
-    #         if save_data:
-    #             self.eval_rts.append(torch.stack(rts, dim=-1).detach())
-    #             self.eval_Wts.append(torch.stack(Wts, dim=-1).detach())
-    #             self.eval_wts.append(torch.stack(wts, dim=-1).detach())
-    #             self.eval_vts.append(torch.stack(vts, dim=-1).detach())
-    #             self.eval_vt_opts.append(torch.cat(vt_opts, dim=-1).detach())
-    #             # Store the time series lists
-    #             self.eval_CS_stim.append(trial_CS)
-    #             self.eval_US_stim.append(trial_US)
-    #         else:
-    #             self.eval_rts = [torch.stack(rts, dim=-1).detach()]
-    #             self.eval_Wts = [torch.stack(Wts, dim=-1).detach()]
-    #             self.eval_wts = [torch.stack(wts, dim=-1).detach()]
-    #             self.eval_vts = [torch.stack(vts, dim=-1).detach()]
-    #             self.eval_vt_opts = [torch.cat(vt_opts, dim=-1).detach()]
-    #             # Store the time series lists
-    #             self.eval_CS_stim = [trial_CS]
-    #             self.eval_US_stim = [trial_US]
-    #
-    #         # Always save the loss for all trials
-    #         loss = cond_loss(self.eval_vts[-1], self.eval_vt_opts[-1],
-    #                          self.eval_rts[-1][:, -self.n_dan:, :])
-    #         self.eval_loss.append(loss.item())
 
     def gen_r_kc_ext(self, n_batch, pos_vt=None, **kwargs):
         """ Generates neuron activations for context and odor inputs.
