@@ -2,21 +2,21 @@
 import numpy as np
 import os
 import torch.optim as optim
-from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
-from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
-from network_classes.paper_tasks.continual_rnn import ContinualRNN
-from network_classes.paper_tasks.trial_functions import first_order_trial
-from network_classes.paper_tasks.trial_functions import second_order_trial
+from network_classes.base_rnn import FirstOrderCondRNN
+from network_classes.all_conditioning_rnn import ExtendedCondRNN
+from network_classes.continual_rnn import ContinualRNN
+from network_classes.trial_functions import first_order_trial
+from network_classes.trial_functions import second_order_trial
 from common.common import *
 
 # Define the path for saving the trained networks and loss plots
 dir_path = os.path.dirname(__file__)
 net_path = dir_path + '/data_store/mbon_sensitivity/'
 
-net_type = '1'
+net_type = '2'
 load_net = 'n'
 save_train = 'y'
-n_ep = 2000
+n_ep = 5000
 save_test = 'y'
 # Set the network parameters
 T_int = 30
@@ -28,7 +28,7 @@ if net_type == '4':
     n_stim = 4
 lr = 0.001  # learning rate
 # Set the parameters for sensitivity training
-n_mbon_0 = 10
+n_mbon_0 = 7
 n_vals = 1
 inc_type = 'exp'
 # Set the number of networks to train

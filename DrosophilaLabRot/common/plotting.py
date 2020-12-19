@@ -6,10 +6,10 @@ import matplotlib.pyplot as plt
 def plot_trial(network, plt_ttl, plt_lbl, plt_mbons=8, **kwargs):
     """ Plots a figure similar to Figure 2 from Jiang 2020.
 
-    Runs the network using a novel combination of stimuli, then prints the
-    result. Top: time series of the various stimuli (CS and US), as well as
-    the target valence and readout. Bottom: activity of randomly chosen
-    mushroom body output neurons (MBONs).
+    Plots the results of the last trial evaluated by the network. Top: time
+    series of the various stimuli (CS and US), as well as the target valence
+    and readout. Bottom: activity of randomly chosen mushroom body output
+    neurons (MBONs).
 
     Parameters
         network = previously trained RNN
@@ -40,6 +40,8 @@ def plot_trial(network, plt_ttl, plt_lbl, plt_mbons=8, **kwargs):
                                    gridspec_kw={'height_ratios': [1, 3]})
     ax1.plot(plot_time, vt, label='Readout')
     ax1.plot(plot_time, vt_opt, label='Target')
+    # Note: the number of stimuli plotted is determined by the label list
+    # This is determined by the output of the trial function
     for i in range(len(CS_lbls)):
         ax1.plot(plot_time, CS_list[i].squeeze(), label='{}'.format(CS_lbls[i]))
     for i in range(len(US_lbls)):
@@ -60,4 +62,4 @@ def plot_trial(network, plt_ttl, plt_lbl, plt_mbons=8, **kwargs):
     # plt.show()
 
     # Return the figure
-    return fig
+    return fig, (ax1, ax2)

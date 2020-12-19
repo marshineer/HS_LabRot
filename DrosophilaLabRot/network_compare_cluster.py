@@ -1,21 +1,20 @@
 # Import the required packages
 import os
 import torch.optim as optim
-from network_classes.paper_tasks.base_rnn import FirstOrderCondRNN
-from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
-from network_classes.paper_tasks.continual_rnn import ContinualRNN
+from network_classes.base_rnn import FirstOrderCondRNN
+from network_classes.all_conditioning_rnn import ExtendedCondRNN
+from network_classes.continual_rnn import ContinualRNN
 from common.common import *
 
 # Define the path for saving the trained networks and loss plots
 dir_path = os.path.dirname(__file__)
 net_path = dir_path + '/data_store/network_compare/'
 
-load_net = 'n'
 save_train = 'y'
 # Set comparison parameters
-net_type = '6'
+net_type = '7'
 n_hop = 1
-n_mbon = 20
+n_mbon = 8
 # Set the network parameters
 T_int = 30
 T_stim = 2
@@ -71,6 +70,7 @@ elif net_type == '4':
     n_ep = 5000
 elif net_type == '5':
     # Minimal network
+    n_mbon = 6
     net_fname = 'min_2nd_order'
     net_ftype = '2nd_order_1hop_min_mbon/'
     p_ext = 0
@@ -83,13 +83,20 @@ elif net_type == '6':
     p_ext = 0.5
     ltp = False
     n_ep = 5000
+elif net_type == '7':
+    # No LTP network
+    net_fname = 'control_net'
+    net_ftype = '2nd_order_no_train/{}_mbons/'.format(str(n_mbon).zfill(2))
+    p_ext = 0.5
+    ltp = True
+    n_ep = 0
 
 for j in range(n_nets):
     # Initialize the network
     if net_type == '1':
         network = FirstOrderCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hop,
                                     n_mbon=n_mbon)
-    elif net_type in ['2', '3', '5', '6']:
+    elif net_type in ['2', '3', '5', '6', '7']:
         network = ExtendedCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hop,
                                   n_mbon=n_mbon)
     elif net_type == '4':

@@ -270,8 +270,8 @@ def int_cond_cs2(t_len, st_times, st_len, r_in, n_batch):
     return r_kct, r_extt, stim_ls, vt_opt
 
 
-def continual_trial(t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
-    """ Runs a continual learning trial (two CS- and two CS+).
+def tr_no_plasticity(t_len, st_times, st_len, r_in, n_batch, csm=False):
+    """ Runs a trial without KC->MBON weight plasticity.
 
     Parameters
         t_len = length of task interval (in indices)
@@ -279,33 +279,100 @@ def continual_trial(t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
         stim_len = length of stimulus presentation (in indices)
         r_in = input neuron activations (r_kc and r_ext)
         n_batch = number of trials in batch
+        csm = indicates whether to run a control (CS-) trial
+            True: present random (novel) odour during second interval
+            False: present CS+ in both intervals
     """
 
-    # Draw the CS presentation times from a Poisson distribution
-    st_times, st_len = gen_cont_times(n_batch, dt, **kwargs)
-    n_odor = len(st_times)
-
     # Set odors and context signals
-    r_kc, r_ext0 = r_in
-    r_kc0 = r_kc[0]
+    r_kc, r_ext = r_in
     # Define the number of Kenyon cells (n_kc) and dim of context (n_ext)
-    n_kc = r_kc0.shape[1]
-    n_ext = r_ext0.shape[1]
-    n_ones = r_kc0[0, :].sum().int()
-    # Initialize lists to store additional odors and their context signals
-    r_kcs = [torch.tensor([0])] * n_odor
-    r_exts = [torch.tensor([0])] * n_odor
-    # The first US is appetitive, while the second is aversive
-    r_exts[0] = torch.tensor([1, 0]).repeat(n_batch, 1)
-    r_exts[1] = torch.tensor([0, 1]).repeat(n_batch, 1)
+    n_kc = r_kc.shape[1]
+    n_ext = r_ext.shape[1]
 
     # Initialize activity matrices
     r_kct = torch.zeros(n_batch, n_kc, t_len)
     r_extt = torch.zeros(n_batch, n_ext, t_len)
 
     # Initialize stimulus time matrices
-    # time_CS = torch.zeros(n_odor, n_batch, t_len)
-    # time_US = torch.zeros_like(time_CS)
+    vt_opt = torch.zeros(n_batch, t_len)
+    time_CSp = torch.zeros_like(vt_opt)
+    time_CSm = torch.zeros_like(vt_opt)
+    time_US = torch.zeros_like(vt_opt)
+
+    # For each stimulus presentation
+    for i in range(2):
+        # Initialize time matrices
+        time_CS_int = torch.zeros_like(vt_opt)
+        time_US_int = torch.zeros_like(vt_opt)
+
+        for b in range(n_batch):
+            stim_inds = st_times[i][b] + torch.arange(st_len)
+            # Set the CS time
+            time_CS_int[b, stim_inds] = 1
+            # Set the CS+ and US time
+            if i == 0:
+                time_CSp[b, stim_inds] = 1
+                time_US_int[b, stim_inds + st_len] = 1
+            # Set the CS+/CS2 and target valence times
+            if i == 1:
+                # Switch the odor in half the trials (target valence is zero)
+                if csm:
+                    CSm_inds = torch.multinomial(torch.ones(n_kc), n_kc)
+                    r_kc[b, :] = r_kc[b, CSm_inds]
+                    r_ext[b, :] = 0
+                    time_CSm[b, stim_inds] = 1
+                # If the odor is not switched, set the target valence
+                else:
+                    time_CSp[b, stim_inds] = 1
+                    if r_ext[b, 0] == 1:
+                        vt_opt[b, (stim_inds + 1)] = 1
+                    elif r_ext[b, 1] == 1:
+                        vt_opt[b, (stim_inds + 1)] = -1
+
+        # Calculate the stimulus time series (KC = CS, ext = US)
+        r_kct += torch.einsum('bm, mbt -> bmt', r_kc,
+                              time_CS_int.repeat(n_kc, 1, 1))
+        r_extt += torch.einsum('bm, mbt -> bmt', r_ext,
+                               time_US_int.repeat(n_ext, 1, 1))
+
+    # Combine the time matrices into a list
+    if csm:
+        time_all_CS = [time_CSp, time_CSm]
+    else:
+        time_all_CS = time_CSp
+    stim_ls = [time_all_CS, time_US]
+
+    return r_kct, r_extt, stim_ls, vt_opt
+
+
+def tr_continual(t_len, st_times, st_len, r_in, n_batch):
+    """ Runs a continual learning trial (two CS- and two CS+).
+
+    Parameters
+        t_len = length of task interval (in indices)
+        st_times = array of stimulus presentation times for each trial
+        stim_len = length of stimulus presentation (in indices)
+        r_in = input neuron activations (r_kc and r_ext)
+        n_batch = number of trialsclassic_net in batch
+    """
+
+    # Draw the CS presentation times from a Poisson distribution
+    # st_times, st_len = gen_cont_times(n_batch, dt, **kwargs)
+    # n_odor = len(st_times)
+
+    # Set odors and context signals
+    r_kcs, r_exts = r_in
+    n_odor = len(r_kcs)
+    # Define the number of Kenyon cells (n_kc) and dim of context (n_ext)
+    n_kc = r_kcs[0].shape[1]
+    n_ext = r_exts[0].shape[1]
+
+    # Initialize activity matrices
+    r_kct = torch.zeros(n_batch, n_kc, t_len)
+    r_extt = torch.zeros(n_batch, n_ext, t_len)
+
+    # Initialize stimulus time matrices
     time_all_CS = []
     time_all_US = []
     vt_opt = torch.zeros(n_batch, t_len)
@@ -316,18 +383,8 @@ def continual_trial(t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
         time_CS = torch.zeros(n_batch, t_len)
         time_US = torch.zeros_like(time_CS)
         append_US = False
-        # Set neutral stimulus contexts
-        r_kcs[i] = torch.zeros_like(r_kc0)
-        if i > 1:
-            r_exts[i] = torch.tensor([0, 0]).repeat(n_batch, 1)
 
         for b in range(n_batch):
-            # Generate odors
-            # new_kc_inds = torch.multinomial(torch.ones(n_kc), n_kc)
-            # r_kcs[i][b, :] = r_kc0[b, new_kc_inds]
-            new_kc_inds = torch.multinomial(torch.ones(n_kc), n_ones)
-            r_kcs[i][b, new_kc_inds] = 1
-
             for j, st in enumerate(st_times[i][b]):
                 # Convert stimulus time into range of indices
                 stim_inds = st + torch.arange(st_len)
@@ -352,17 +409,14 @@ def continual_trial(t_len, st_times, st_len, r_in, n_batch, dt, **kwargs):
                                time_US.repeat(n_ext, 1, 1))
 
         # Save the CS and US stimuli time series
-        # time_all_CS[i, :, :] = time_CS
-        # time_all_US[i, :, :] = time_US
         time_all_CS.append(time_CS)
         if append_US:
             time_all_US.append(time_US)
 
     # Combine the time matrices into a list
     stim_ls = [time_all_CS, time_all_US]
-    r_next = (r_kcs, r_exts)
 
-    return r_next, r_kct, r_extt, stim_ls, vt_opt
+    return r_kct, r_extt, stim_ls, vt_opt
 
 
 def gen_int_times(n_batch, dt, T_stim, T_range=(5, 15), **kwargs):

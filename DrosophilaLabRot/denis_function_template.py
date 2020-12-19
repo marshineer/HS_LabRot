@@ -1,6 +1,6 @@
 # Import the required packages
 import torch.optim as optim
-from network_classes.paper_tasks.all_conditioning_rnn import ExtendedCondRNN
+from network_classes.all_conditioning_rnn import ExtendedCondRNN
 from common.plotting import *
 from common.common import *
 import os
@@ -174,9 +174,11 @@ plt_ttl = 'Second-order (No Recurrence) Conditioning'
 plt_lbl = (['CS+', 'CS-', 'Novel CS'], ['US'])
 
 # Plot the trial
-fig = plot_given(network, plt_ttl, plt_lbl, pos_vt=None)
+fig = plot_trial(network, plt_ttl, plt_lbl, pos_vt=None)
 
 # Save the losses plot
 plot_path = net_path + 'trial_plots/' + plt_fname + '_trial.png'
 if save_plot == 'y':
     fig.savefig(plot_path, bbox_inches='tight')
+
+plt.show()
