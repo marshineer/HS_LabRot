@@ -18,9 +18,11 @@ class NoPlasticityRNN(FirstOrderCondRNN):
         odor_list = torch.zeros(n_odors, self.n_kc)
         odor_inds = torch.multinomial(torch.ones(n_odors, self.n_kc),
                                       self.n_ones, generator=gen)
+        print(odor_inds)
         for n in range(n_odors):
             # Define an odor (CS)
             odor_list[n, odor_inds[n, :]] = 1
+        print(odor_list)
         self.train_odors = odor_list
         # Set the number of task intervals
         self.n_int = 1

@@ -5,8 +5,8 @@ import torch.optim as optim
 from network_classes.base_rnn import FirstOrderCondRNN
 from network_classes.all_conditioning_rnn import ExtendedCondRNN
 from network_classes.continual_rnn import ContinualRNN
-from network_classes.trial_functions import first_order_trial
-from network_classes.trial_functions import second_order_trial
+from common.trial_functions import first_order_trial
+from common.trial_functions import second_order_trial
 from common.common import *
 
 # Define the path for saving the trained networks and loss plots

@@ -2,7 +2,7 @@
 import os
 import torch.optim as optim
 from network_classes.no_plasticity_rnn import NoPlasticityRNN
-from network_classes.trial_functions import no_plasticity_trial
+from common.trial_functions import no_plasticity_trial
 from common.common import *
 from common.plotting import *
 

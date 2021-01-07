@@ -2,7 +2,7 @@
 import os
 import torch.optim as optim
 from network_classes.base_rnn import FirstOrderCondRNN
-from network_classes.trial_functions import first_order_trial
+from common.trial_functions import first_order_trial
 from common.common import *
 from common.plotting import *
 

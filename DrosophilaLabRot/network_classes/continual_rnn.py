@@ -17,7 +17,7 @@ class ContinualRNN(FirstOrderCondRNN):
         self.beta = nn.Parameter(torch.ones(self.n_kc) * 0.01,
                                  requires_grad=True)
 
-    def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, nps=True,
+    def calc_dw(self, r_bar_kc, r_bar_dan, r_kc, r_dan, n_batch, nsp=True,
                 **kwargs):
         """ Calculates the dynamic weight update (see Eq 4).
 
@@ -27,7 +27,7 @@ class ContinualRNN(FirstOrderCondRNN):
             r_kc = current activity of Kenyon cells
             r_dan = current activity of dopamine cells
             n_batch = number of trials in mini-batch
-            nps = indicates whether non-specific potentiation is included
+            nsp = indicates whether non-specific potentiation is included
 
         Returns
             dw = increment of dynamic plasticity variable wt
@@ -38,7 +38,7 @@ class ContinualRNN(FirstOrderCondRNN):
         prod2 = torch.einsum('bd, bk -> bdk', r_dan, r_bar_kc)
 
         # Include non-specific potentiation (unless control condition)
-        if nps:
+        if nsp:
             # Rectify the potentiation parameter
             beta = F.relu(self.beta.clone())
             # Constrain the potentiation parameter to be positive

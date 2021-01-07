@@ -7,7 +7,7 @@ from common.common import *
 
 class FirstOrderCondRNN(nn.Module):
     def __init__(self, *, n_kc=200, n_mbon=20, n_fbn=60, n_ext=2, n_out=1,
-                 T_int=30, T_stim=2, dt=0.5, f_ones=0.1, n_hop=0, n_seed=None):
+                 T_int=30, T_stim=2, dt=0.5, f_ones=0.1, n_hop=3, n_seed=None):
         super().__init__()
 
         # Set constants
@@ -92,7 +92,7 @@ class FirstOrderCondRNN(nn.Module):
         self.bias = nn.Parameter(torch.ones(self.n_recur) * 0.1,
                                  requires_grad=True)
         # Project the context (ext) signals to the DANs if FBNs are removed
-        if n_hop == 1:
+        if n_hop in [0, 1]:
             self.W_ext = nn.Parameter(torch.randn(n_dan, n_ext),
                                       requires_grad=True)
         else:
@@ -100,7 +100,7 @@ class FirstOrderCondRNN(nn.Module):
                                       requires_grad=True)
 
     def forward(self, r_kc, r_ext, time, n_batch=30, W0=None, r0=None,
-                ud_wts=True, ko_wts=None, **kwargs):
+                ud_wts=True, ko_wts=None, act_dan=None, **kwargs):
         """ Defines the forward pass of the RNN
 
         The KC->MBON weights are constrained to the range [0, 0.05].
@@ -120,6 +120,7 @@ class FirstOrderCondRNN(nn.Module):
                 True: KC->MBON plasticity is on
                 False: KC->MBON plasticity turned off
             ko_wts = list of MBON indices to be knocked out
+            act_dan = list of DANs to artificially activate (eg optogenetically)
 
         Returns
             r_recur: list of torch.ndarray(batch_size, n_mbon + n_fbn + n_dan)
@@ -152,8 +153,13 @@ class FirstOrderCondRNN(nn.Module):
         W_readout = self.W_readout.clone()
         # Set the weights DAN->MBON to zero
         W_recur = self.W_recur.clone()
-        if self.n_hop == 0:
+        if self.n_hop == 3:
             W_recur[:self.n_mbon, -self.n_dan:] = 0
+        elif self.n_hop == 0:
+            W_recur[-self.n_dan:, :self.n_mbon] = 0
+            W_recur[:self.n_mbon, -self.n_dan:] = 0
+            W_recur[self.n_mbon:(self.n_mbon + self.n_fbn), :] = 0
+            W_recur[:, self.n_mbon:(self.n_mbon + self.n_fbn)] = 0
         elif self.n_hop == 1:
             W_recur[:self.n_mbon, -self.n_dan:] = 0
             W_recur[self.n_mbon:(self.n_mbon + self.n_fbn), :] = 0
@@ -166,6 +172,8 @@ class FirstOrderCondRNN(nn.Module):
         for n in ko_wts:
             W_recur[:, n] = 0
             W_readout[:, n] = 0
+        if act_dan is None:
+            act_dan = []
 
         # Initialize the KC->MBON weights
         W_kc_mbon = [W0[0]]
@@ -179,7 +187,7 @@ class FirstOrderCondRNN(nn.Module):
                                      W_kc_mbon[-1], r_kc[:, :, t])
             I_tot[:, :self.n_mbon] = I_kc_mbon
             # Project the context (ext) signals to the DANs if FBNs are removed
-            if self.n_hop == 1:
+            if self.n_hop in [0, 1]:
                 I_dan = torch.einsum('bde, be -> bd',
                                      self.W_ext.repeat(n_batch, 1, 1),
                                      r_ext[:, :, t])
@@ -196,7 +204,14 @@ class FirstOrderCondRNN(nn.Module):
                                    r_recur[-1])
             dr = (-r_recur[-1] + F.relu(Wr_prod + self.bias.repeat(n_batch, 1)
                                         + I_tot)) / self.tau_r
-            r_recur.append(r_recur[-1] + dr * dt)
+            r_new = r_recur[-1] + dr * dt
+            # Artificially activate DANs
+            for n in act_dan:
+                # r_max = torch.max(r_new)
+                # r_new[:, :] = 0  # TODO: set all other DANs to zero?
+                r_new[:, (n - self.n_dan)] = 0.8
+                # r_new[:, (n - self.n_dan)] = 2 * r_max
+            r_recur.append(r_new)
 
             # Update KC->MBON plasticity variables
             if ud_wts:
@@ -495,7 +510,8 @@ class FirstOrderCondRNN(nn.Module):
         return r_kct_ls, r_extt_ls, vt_opt
 
     def run_eval(self, trial_fnc, *, T_int=None, T_stim=None, dt=None, n_trial=1,
-                 n_batch=1, reset_wts=True, save_data=False, **kwargs):
+                 n_batch=1, W_in=None, reset_wts=True, save_data=False,
+                 **kwargs):
         """ Runs an evaluation based on a series of input functions
 
         Parameters
@@ -505,6 +521,7 @@ class FirstOrderCondRNN(nn.Module):
             dt = time step of simulation (in seconds)
             n_trial = number of trials to run
             n_batch = number of parallel trials in a batch
+            W_in = initial weights for KC->MBON connections
             reset_wts = indicates whether to reset weights between trials
             save_all_data = save data for each trial, or just the last
         """
@@ -528,19 +545,20 @@ class FirstOrderCondRNN(nn.Module):
             dt = self.dt
         T_vars = (T_int, T_stim, dt)
 
-        # Initialize the KC-MBON weights and plasticity variable
-        W_in = None
-
         # For each trial, run the given trial function
         for trial in range(n_trial):
             # Determine whether to reset KC->MBON weights between trials
-            if reset_wts or (W_in is None):
+            if W_in is None:
                 W_in = self.init_w_kc_mbon(None, n_batch, (trial, n_trial))
-            else:
+            elif trial != 0:
                 W_in = (W_in[0][-1].detach(), W_in[1][-1].detach())
 
             trial_outs = trial_fnc(self, W_in, T_vars, n_batch, **kwargs)
             rts, Wts, wts, vts, vt_opt, err, odors, stim = trial_outs
+
+            # Reset the weights
+            if reset_wts:
+                W_in = None
 
             # Store the network errors
             self.eval_err.append(err)

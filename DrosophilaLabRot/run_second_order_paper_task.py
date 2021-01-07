@@ -1,7 +1,7 @@
 # Import the required packages
 import os
 import torch.optim as optim
-from network_classes.trial_functions import second_order_trial
+from common.trial_functions import second_order_trial
 from network_classes.all_conditioning_rnn import ExtendedCondRNN
 from common.common import *
 from common.plotting import *
