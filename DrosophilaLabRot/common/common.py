@@ -314,6 +314,7 @@ def tr_no_plasticity(t_len, st_times, st_len, r_in, n_batch, csm=False):
             if i == 0:
                 time_CSp[b, stim_inds] = 1
                 time_US_int[b, stim_inds + st_len] = 1
+                time_US += time_US_int
             # Set the CS+/CS2 and target valence times
             if i == 1:
                 # Switch the odor in half the trials (target valence is zero)

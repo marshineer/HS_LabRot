@@ -306,7 +306,7 @@ def no_plasticity_trial(net, W_in, T_vars, n_batch, task: str, **kwargs):
     net_out = net(r_kct, r_extt, time_int, n_batch, W_in, **kwargs)
     rts, (Wts, wts), vts = net_out
 
-    # Save the recurrent neuron activites
+    # Save the recurrent neuron activities
     rts_trial = torch.stack(rts, dim=-1).detach()
     # Save the KC->MBON weights from the end of each interval
     Wts_trial = torch.stack(Wts, dim=-1).detach()

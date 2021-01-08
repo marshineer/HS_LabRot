@@ -5,24 +5,26 @@ from common.common import *
 
 
 class NoPlasticityRNN(FirstOrderCondRNN):
-    def __init__(self, *, n_odors=10, odor_seed=12345678, **kwargs):
+    def __init__(self, *, n_odors=10, net_seed=12345678, **kwargs):
         super().__init__(**kwargs)
         # Set the static KC->MBON weights
         W_kc_mbon_max = 0.05
-        self.W_kc_mbon = Variable(torch.rand(self.n_mbon, self.n_kc) *
-                                  W_kc_mbon_max, requires_grad=False)
+        torch.manual_seed(net_seed)
+        # self.W_kc_mbon = Variable(torch.rand(self.n_mbon, self.n_kc) *
+        #                           W_kc_mbon_max, requires_grad=False)
+        self.W_kc_mbon = torch.rand(self.n_mbon, self.n_kc) * W_kc_mbon_max
         # Generate a static list of odors for the network to train on
         self.n_odors = n_odors
-        gen = torch.Generator()
-        gen = gen.manual_seed(odor_seed)
+        # gen = torch.Generator()
+        # gen = gen.manual_seed(odor_seed)
         odor_list = torch.zeros(n_odors, self.n_kc)
+        # odor_inds = torch.multinomial(torch.ones(n_odors, self.n_kc),
+        #                               self.n_ones, generator=gen)
         odor_inds = torch.multinomial(torch.ones(n_odors, self.n_kc),
-                                      self.n_ones, generator=gen)
-        print(odor_inds)
+                                      self.n_ones)
         for n in range(n_odors):
             # Define an odor (CS)
             odor_list[n, odor_inds[n, :]] = 1
-        print(odor_list)
         self.train_odors = odor_list
         # Set the number of task intervals
         self.n_int = 1

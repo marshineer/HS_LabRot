@@ -14,7 +14,7 @@ net_path = dir_path + '/data_store/paper_nets/'
 # Set the network parameters
 n_ep = 5000
 T_int = 40
-n_odor = 10
+n_odor = 1
 
 # Initialize the network
 network = NoPlasticityRNN(T_int=T_int, n_odors=n_odor)
