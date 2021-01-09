@@ -131,4 +131,5 @@ dmypy.json
 # Project files and folders
 DrosophilaLabRot/not_used/
 old/
+mbon_sensitivity_backup/
 sync_to_cluster.sh

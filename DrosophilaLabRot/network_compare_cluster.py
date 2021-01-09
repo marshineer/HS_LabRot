@@ -18,21 +18,22 @@ net_path = dir_path + '/data_store/network_compare/'
 # 2-hop means there are feedback neurons, but they only act as a relay
 # 3-hop is the standard setup from the paper (i.e. full recurrence)
 # Descriptions of each net_type option
-# '1' = First-order network, trained on first-order tasks
-# '2' = Extended network, trained on all classical conditioning tasks
-# '3' = Extended network, trained on all classical conditioning tasks (1-hop)
+# '1' = Extended network, untrained (only initialized)
+# '2' = First-order network, trained on first-order tasks
+# '3' = Extended network, trained on all classical conditioning tasks
 # '4' = Extended network, trained on all classical conditioning tasks (2-hop)
-# '5' = Extended network, trained only on 2nd-order conditioning (CS2) task
-# '6' = Extended network, trained only on CS2 task (1-hop)
-# '7' = Continual network, trained on continual learning task (1-hop)
-# '8' = Extended network (min MBONs), all classical conditioning tasks (1-hop)
-# '9' = Extended network (min MBONs), trained on CS2 task (1-hop)
-# '10' = Extended network, all classical conditioning tasks (no LTP)
-# '11' = Extended network, all classical conditioning tasks (no LTP, 1-hop)
-# '12' = Extended network, untrained (only initialized)
-# '13' = Extended network, all classical conditioning tasks (0-hop)
+# '5' = Extended network, trained on all classical conditioning tasks (1-hop)
+# '6' = Extended network, trained on all classical conditioning tasks (no hop)
+# '7' = Extended network, trained only on 2nd-order conditioning (CS2) task
+# '8' = Extended network, trained only on CS2 task (1-hop)
+# '9' = Extended network, all classical conditioning tasks (no LTP)
+# '10' = Extended network, all classical conditioning tasks (no LTP, 1-hop)
+# '11' = Extended network (min MBONs), all classical conditioning tasks
+# '12' = Extended network (min MBONs), all classical conditioning tasks (1-hop)
+# '13' = Extended network (min MBONs), trained on CS2 task (1-hop)
+# '14' = Continual network, trained on continual learning task (1-hop)
 save_train = 'y'
-net_type = '10'
+net_type = '13'
 
 # Set the network parameters
 T_int = 30
@@ -44,106 +45,6 @@ print('')
 
 # Set the network parameters
 if net_type == '1':
-    # Standard first-order conditioning
-    p_ext = None
-    ltp = True
-    n_ep = 2000
-    n_hop = 1
-    n_mbon = 20
-    net_fname = 'first_order'
-    net_ftype = '1st_order_paper/'
-elif net_type == '2':
-    # Standard all classical conditioning
-    p_ext = 0.5
-    ltp = True
-    n_ep = 5000
-    n_hop = 3
-    n_mbon = 20
-    net_fname = 'second_order'
-    net_ftype = '2nd_order_paper/'
-elif net_type == '3':
-    # All classical conditioning with no recurrence (one-hop)
-    p_ext = 0.5
-    ltp = True
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 8
-    net_fname = 'second_order_1hop'
-    net_ftype = '2nd_order_1hop_0fbn/'
-elif net_type == '4':
-    # All classical conditioning with no recurrence (two-hop)
-    p_ext = 0.5
-    ltp = True
-    n_ep = 5000
-    n_hop = 2
-    n_mbon = 20
-    net_fname = 'second_order_2hop'
-    net_ftype = '2nd_order_2hop_0fbn/'
-elif net_type == '5':
-    # Second-order conditioning only (i.e. no extinction)
-    p_ext = 0
-    ltp = True
-    n_ep = 5000
-    n_hop = 3
-    n_mbon = 20
-    net_fname = 'second_order_only'
-    net_ftype = '2nd_order_no_extinction/'
-elif net_type == '6':
-    # Second-order conditioning only, no recurrence (one-hop)
-    p_ext = 0
-    ltp = True
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 20
-    net_fname = 'second_order_only_1hop'
-    net_ftype = '2nd_order_1hop_no_extinction/'
-elif net_type == '7':
-    # Continual learning with no recurrence
-    p_ext = None
-    ltp = True
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 20
-    n_stim_avg = 2
-    n_stim = 4
-    net_fname = 'continual_{}stim_{}avg'.format(n_stim, n_stim_avg)
-elif net_type == '8':
-    # Minimal network all classical trained (one-hop, no recurrence)
-    p_ext = 0.5
-    ltp = True
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 8
-    net_fname = 'min_2nd_order'
-    net_ftype = '2nd_order_1hop_min_mbon/'
-elif net_type == '9':
-    # Minimal network CS2 trained (one-hop, no recurrence)
-    p_ext = 0
-    ltp = True
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 8
-    net_fname = 'min_2nd_order_only'
-    net_ftype = '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/'
-elif net_type == '10':
-    # No LTP network
-    p_ext = 0.5
-    ltp = False
-    n_ep = 5000
-    n_hop = 3
-    n_mbon = 20
-    net_fname = '2nd_order_no_ltp'
-    net_ftype = '2nd_order_no_ltp/'
-elif net_type == '11':
-    # No LTP network (one-hop, no recurrence)
-    p_ext = 0.5
-    ltp = False
-    n_ep = 5000
-    n_hop = 1
-    n_mbon = 20
-    net_fname = '2nd_order_no_ltp'
-    net_ftype = '2nd_order_1hop_no_ltp/'
-elif net_type == '12':
     # Control network
     p_ext = 0.5
     ltp = True
@@ -152,15 +53,124 @@ elif net_type == '12':
     n_mbon = 20
     net_fname = 'control_net'
     net_ftype = '2nd_order_no_train/{}_mbons/'.format(str(n_mbon).zfill(2))
-elif net_type == '13':
-    # No MBON->DAN connections
+elif net_type == '2':
+    # Standard first-order conditioning
+    p_ext = None
+    ltp = True
+    n_ep = 2000
+    n_hop = 1
+    n_mbon = 20
+    net_fname = 'first_order'
+    net_ftype = '1st_order_paper/'
+elif net_type == '3':
+    # Standard all classical conditioning
+    p_ext = 0.5
+    ltp = True
+    n_ep = 5000
+    n_hop = 3
+    n_mbon = 20
+    net_fname = 'second_order'
+    net_ftype = '2nd_order_paper/'
+elif net_type == '4':
+    # All classical conditioning (no recurrence, two-hop)
+    p_ext = 0.5
+    ltp = True
+    n_ep = 5000
+    n_hop = 2
+    n_mbon = 20
+    net_fname = 'second_order_2hop'
+    net_ftype = '2nd_order_2hop_0fbn/'
+elif net_type == '5':
+    # All classical conditioning (no recurrence, one-hop)
+    p_ext = 0.5
+    ltp = True
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 8
+    net_fname = 'second_order_1hop'
+    net_ftype = '2nd_order_1hop_0fbn/'
+elif net_type == '6':
+    # No MBON->DAN connections at all
     p_ext = 0.5
     ltp = True
     n_ep = 5000
     n_hop = 0
     n_mbon = 20
-    net_fname = '2nd_order_no_hop'
-    net_ftype = '2nd_order_no_hop_0fbn/'.format(str(n_mbon).zfill(2))
+    net_fname = '2nd_order_0hop'
+    net_ftype = '2nd_order_0hop_0fbn/'.format(str(n_mbon).zfill(2))
+elif net_type == '7':
+    # Second-order conditioning only (i.e. no extinction)
+    p_ext = 0
+    ltp = True
+    n_ep = 5000
+    n_hop = 3
+    n_mbon = 20
+    net_fname = 'second_order_only'
+    net_ftype = '2nd_order_no_extinction/'
+elif net_type == '8':
+    # Second-order conditioning only (no recurrence, one-hop)
+    p_ext = 0
+    ltp = True
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 20
+    net_fname = 'second_order_only_1hop'
+    net_ftype = '2nd_order_1hop_no_extinction/'
+elif net_type == '9':
+    # No LTP network
+    p_ext = 0.5
+    ltp = False
+    n_ep = 5000
+    n_hop = 3
+    n_mbon = 20
+    net_fname = '2nd_order_no_ltp'
+    net_ftype = '2nd_order_no_ltp/'
+elif net_type == '10':
+    # No LTP network (no recurrence, one-hop)
+    p_ext = 0.5
+    ltp = False
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 20
+    net_fname = '2nd_order_no_ltp'
+    net_ftype = '2nd_order_1hop_no_ltp/'
+elif net_type == '11':
+    # Minimal network all classical conditioning
+    p_ext = 0.5
+    ltp = True
+    n_ep = 5000
+    n_hop = 3
+    n_mbon = 10
+    net_fname = 'min_2nd_order'
+    net_ftype = '2nd_order_min_mbon/{}_mbons/'
+elif net_type == '12':
+    # Minimal network all classical conditioning (no recurrence, one-hop)
+    p_ext = 0.5
+    ltp = True
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 10
+    net_fname = 'min_2nd_order_only'
+    net_ftype = '2nd_order_1hop_min_mbon/{}_mbons/'
+elif net_type == '13':
+    # Minimal network CS2 trained (no recurrence, one-hop)
+    p_ext = 0
+    ltp = True
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 10
+    net_fname = 'min_2nd_order_only'
+    net_ftype = '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/'
+elif net_type == '14':
+    # Continual learning with (no recurrence, one-hop)
+    p_ext = None
+    ltp = True
+    n_ep = 5000
+    n_hop = 1
+    n_mbon = 20
+    n_stim_avg = 2
+    n_stim = 4
+    net_fname = 'continual_{}stim_{}avg'.format(n_stim, n_stim_avg)
 
 for j in range(n_nets):
     # Initialize the network

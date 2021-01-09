@@ -17,28 +17,7 @@ label_font = 18
 title_font = 24
 legend_font = 12
 
-# Create a list of paths for each network type
-#  (path, prefix, n_epoch, n_hop)
-p_list = [('2nd_order_no_train/20_mbons/', 'control_net', 0, 1),
-          ('1st_order_paper/', 'first_order', 2000, 0),
-          ('2nd_order_paper/', 'second_order', 5000, 0),
-          ('2nd_order_no_extinction/', 'second_order_only', 5000, 0),
-          ('2nd_order_2hop_0fbn/', 'second_order_2hop', 5000, 2),
-          ('2nd_order_1hop_0fbn/', 'second_order_1hop', 5000, 1),
-          ('2nd_order_1hop_no_extinction/', 'second_order_only_1hop', 5000, 1),
-          ('2nd_order_1hop_no_ltp/', '2nd_order_no_ltp', 5000, 1),
-          ('2nd_order_1hop_min_mbon/', 'min_2nd_order', 5000, 1)]
-p_names = ['Untrained Net',
-           '1st-order Conditioning Net',
-           'All Classical Conditioning Net\n(Control)',
-           '2nd-order Conditioning Net\n(Only CS2 Training)',
-           'All Classical Conditioning Net\n(No Feedback, 2 hop)',
-           'All Classical Conditioning Net\n(No Feedback, 1 hop)',
-           '2nd-order Conditioning Net\n(Only CS2, 1hop)',
-           'All Classical Conditioning Net\n(No LTP, 1 hop)',
-           'All Classical Conditioning Net\n(8 MBONs)']
-
-# Set which task to plot
+# Set which task to plot (this is the only user input required)
 #  '1' = first-order conditioning
 #  '2' = extinction
 #  '3' = second-order conditioning
@@ -55,6 +34,32 @@ elif task_type == '3':
     task = '2nd'
     plt_ttl = 'Second-order Conditioning Task'
     plt_name = 'plots/second_order_compare.png'
+
+# Create a list of paths for each network type
+#  (path, prefix, n_epoch, n_hop)
+p_list = [('2nd_order_no_train/20_mbons/', 'control_net', 0, 1),
+          ('1st_order_paper/', 'first_order', 2000, 3),
+          ('2nd_order_paper/', 'second_order', 5000, 3),
+          ('2nd_order_2hop_0fbn/', 'second_order_2hop', 5000, 2),
+          ('2nd_order_1hop_0fbn/', 'second_order_1hop', 5000, 1),
+          ('2nd_order_0hop_0fbn/', '2nd_order_no_hop', 5000, 0),
+          ('2nd_order_no_extinction/', 'second_order_only', 5000, 3),
+          ('2nd_order_no_ltp/', '2nd_order_no_ltp', 5000, 3),]
+          # ('2nd_order_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
+          # ('2nd_order_1hop_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
+          # ('2nd_order_no_extinction_1hop_min_mbon/10_mbons/', 'min_2nd_order',
+          # 5000, 1)]
+p_names = ['Untrained Net',
+           '1st-order Conditioning Net',
+           'All Classical Conditioning Net\n(Control)',
+           'All Classical Conditioning Net\n(No Feedback, 2-hop)',
+           'All Classical Conditioning Net\n(No Feedback, 1-hop)',
+           'All Classical Conditioning Net\n(No MBON->DAN Connection)',
+           'All Classical Conditioning Net\n(Only CS2 Training)',
+           'All Classical Conditioning Net\n(No LTP)',]
+           # 'All Classical Conditioning Net\n(10 MBONs)',
+           # 'All Classical Conditioning Net\n(10 MBONs, 1-hop)',
+           # 'All Classical Conditioning Net\n(10 MBONs, 1-hop, CS2 Only)']
 
 # Set network parameters
 T_int = 30
@@ -76,16 +81,13 @@ for i, path in enumerate(p_list):
     net_err = np.zeros(n_nets)
     net_ftype, net_fname, n_ep, n_hop = p_list[i]
     # Initialize the network
-    n_hopp = n_hop
-    if n_hop == 0:
-        n_hopp = 3
-    if i == (len(p_list) - 1):
-        n_mbon = 6
+    # if i >= (len(p_list) - 3):
+    #     n_mbon = 10
     if i == 0:
-        network = FirstOrderCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hopp,
+        network = FirstOrderCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hop,
                                     n_mbon=n_mbon)
     else:
-        network = ExtendedCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hopp,
+        network = ExtendedCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hop,
                                   n_mbon=n_mbon)
 
     # For each instance of the network
@@ -99,34 +101,45 @@ for i, path in enumerate(p_list):
 
         # Evaluate the network
         network.run_eval(second_order_trial, n_batch=n_trials, task=task)
-        vts = network.eval_vts[0]
-        vt_opts = network.eval_vt_opts[0]
         net_err[j] = network.eval_err[0]
-        for k in range(n_trials):
-            task_err[k, j] = cond_err(vts[k, :], vt_opts[k, :])
+        # vts = network.eval_vts[0]
+        # vt_opts = network.eval_vt_opts[0]
+        # for k in range(n_trials):
+        #     task_err[k, j] = cond_err(vts[k, :], vt_opts[k, :])
 
     # err_list.append(task_err.flatten())
     # log_err_list.append(np.log10(task_err.flatten()))
     # log_min = min(np.min(np.log10(task_err)), log_min)
     # log_max = max(np.max(np.log10(task_err)), log_max)
     err_list.append(net_err.flatten())
-    log_err_list.append(np.log10(net_err.flatten()))
-    log_min = min(np.min(np.log10(net_err)), log_min)
-    log_max = max(np.max(np.log10(net_err)), log_max)
+    # log_err_list.append(np.log10(net_err.flatten()))
+    # log_min = min(np.min(np.log10(net_err)), log_min)
+    # log_max = max(np.max(np.log10(net_err)), log_max)
+    if i == 2:
+        avg_ctrl_err = np.mean(net_err)
 
-# print(log_min)
-# print(log_max)
-# print(np.arange(np.floor(log_min), np.ceil(log_max) + 1))
+# Normalize the errors to the control network
+err_list_norm = []
+log_err_list_norm = []
+for i in range(len(p_list)):
+    norm_err = err_list[i] / avg_ctrl_err
+    err_list_norm.append(norm_err)
+    log_err_list_norm.append(np.log10(norm_err))
+    log_min = min(np.min(np.log10(norm_err)), log_min)
+    log_max = max(np.max(np.log10(norm_err)), log_max)
 
 # Plot the box plot comparison
-fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+fig, ax = plt.subplots(1, 1, figsize=(14, 8))
 # ax.boxplot(err_list)
-ax.boxplot(log_err_list)
+# ax.boxplot(log_err_list)
+# ax.boxplot(err_list_norm)
+ax.boxplot(log_err_list_norm)
 ax.set_xticks(np.arange(len(p_list)) + 1)
-ax.set_xticklabels(p_names, rotation=45, ha="right", rotation_mode="anchor")
+ax.set_xticklabels(p_names, rotation=30, ha="right", rotation_mode="anchor")
 ax.set_ylabel('Readout Error (log 10)', fontsize=label_font)
-ax.set_yticks(np.arange(np.floor(log_min), np.ceil(log_max) + 1))
-ax.set_title('Network Performance Comparison of\n'+plt_ttl, fontsize=title_font)
+# ax.set_yticks(np.arange(np.floor(log_min), np.ceil(log_max) + 1))
+ax.set_title('Network Performance Comparison of 20 Networks\n'+plt_ttl,
+             fontsize=title_font)
 fig.tight_layout()
 plt.show()
 
