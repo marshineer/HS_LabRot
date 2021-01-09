@@ -41,7 +41,6 @@ T_stim = 2
 lr = 0.001  # learning rate
 # Set the number of networks to train
 n_nets = 20
-print('')
 
 # Set the network parameters
 if net_type == '1':
@@ -97,7 +96,7 @@ elif net_type == '6':
     n_hop = 0
     n_mbon = 20
     net_fname = '2nd_order_0hop'
-    net_ftype = '2nd_order_0hop_0fbn/'.format(str(n_mbon).zfill(2))
+    net_ftype = '2nd_order_0hop_0fbn/'
 elif net_type == '7':
     # Second-order conditioning only (i.e. no extinction)
     p_ext = 0
@@ -142,7 +141,7 @@ elif net_type == '11':
     n_hop = 3
     n_mbon = 10
     net_fname = 'min_2nd_order'
-    net_ftype = '2nd_order_min_mbon/{}_mbons/'
+    net_ftype = '2nd_order_min_mbon/{}_mbons/'.format(str(n_mbon).zfill(2))
 elif net_type == '12':
     # Minimal network all classical conditioning (no recurrence, one-hop)
     p_ext = 0.5
@@ -151,7 +150,7 @@ elif net_type == '12':
     n_hop = 1
     n_mbon = 10
     net_fname = 'min_2nd_order_only'
-    net_ftype = '2nd_order_1hop_min_mbon/{}_mbons/'
+    net_ftype = '2nd_order_1hop_min_mbon/{}_mbons/'.format(str(n_mbon).zfill(2))
 elif net_type == '13':
     # Minimal network CS2 trained (no recurrence, one-hop)
     p_ext = 0
@@ -160,7 +159,8 @@ elif net_type == '13':
     n_hop = 1
     n_mbon = 10
     net_fname = 'min_2nd_order_only'
-    net_ftype = '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/'
+    net_ftype = '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/'\
+        .format(str(n_mbon).zfill(2))
 elif net_type == '14':
     # Continual learning with (no recurrence, one-hop)
     p_ext = None
