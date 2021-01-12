@@ -44,11 +44,11 @@ p_list = [('2nd_order_no_train/20_mbons/', 'control_net', 0, 1),
           ('2nd_order_1hop_0fbn/', 'second_order_1hop', 5000, 1),
           ('2nd_order_0hop_0fbn/', '2nd_order_no_hop', 5000, 0),
           ('2nd_order_no_extinction/', 'second_order_only', 5000, 3),
-          ('2nd_order_no_ltp/', '2nd_order_no_ltp', 5000, 3),]
-          # ('2nd_order_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
-          # ('2nd_order_1hop_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
-          # ('2nd_order_no_extinction_1hop_min_mbon/10_mbons/', 'min_2nd_order',
-          # 5000, 1)]
+          ('2nd_order_no_ltp/', '2nd_order_no_ltp', 5000, 3),
+          ('2nd_order_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
+          ('2nd_order_1hop_min_mbon/10_mbons/', 'min_2nd_order', 5000, 1),
+          ('2nd_order_no_extinction_1hop_min_mbon/10_mbons/', 'min_2nd_order',
+          5000, 1)]
 p_names = ['Untrained Net',
            '1st-order Conditioning Net',
            'All Classical Conditioning Net\n(Control)',
@@ -56,10 +56,10 @@ p_names = ['Untrained Net',
            'All Classical Conditioning Net\n(No Feedback, 1-hop)',
            'All Classical Conditioning Net\n(No MBON->DAN Connection)',
            'All Classical Conditioning Net\n(Only CS2 Training)',
-           'All Classical Conditioning Net\n(No LTP)',]
-           # 'All Classical Conditioning Net\n(10 MBONs)',
-           # 'All Classical Conditioning Net\n(10 MBONs, 1-hop)',
-           # 'All Classical Conditioning Net\n(10 MBONs, 1-hop, CS2 Only)']
+           'All Classical Conditioning Net\n(No LTP)',
+           'All Classical Conditioning Net\n(10 MBONs)',
+           'All Classical Conditioning Net\n(10 MBONs, 1-hop)',
+           'All Classical Conditioning Net\n(10 MBONs, 1-hop, CS2 Only)']
 
 # Set network parameters
 T_int = 30
@@ -81,8 +81,8 @@ for i, path in enumerate(p_list):
     net_err = np.zeros(n_nets)
     net_ftype, net_fname, n_ep, n_hop = p_list[i]
     # Initialize the network
-    # if i >= (len(p_list) - 3):
-    #     n_mbon = 10
+    if i >= (len(p_list) - 3):
+        n_mbon = 10
     if i == 0:
         network = FirstOrderCondRNN(T_int=T_int, T_stim=T_stim, n_hop=n_hop,
                                     n_mbon=n_mbon)

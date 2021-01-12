@@ -209,7 +209,7 @@ class FirstOrderCondRNN(nn.Module):
             for n in act_dan:
                 # r_max = torch.max(r_new)
                 # r_new[:, :] = 0  # TODO: set all other DANs to zero?
-                r_new[:, (n - self.n_dan)] = 0.8
+                r_new[:, (n - self.n_dan)] = 0.2
                 # r_new[:, (n - self.n_dan)] = 2 * r_max
             r_recur.append(r_new)
 
