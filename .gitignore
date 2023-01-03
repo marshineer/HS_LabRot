@@ -130,6 +130,6 @@ dmypy.json
 
 # Project files and folders
 DrosophilaLabRot/not_used/
-old/
-mbon_sensitivity_backup/
+DrosophilaLabRot/data_store/
+presentation_images/
 sync_to_cluster.sh

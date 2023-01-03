@@ -139,7 +139,7 @@ elif net_type == '11':
     ltp = True
     n_ep = 5000
     n_hop = 3
-    n_mbon = 10
+    n_mbon = 8
     net_fname = 'min_2nd_order'
     net_ftype = '2nd_order_min_mbon/{}_mbons/'.format(str(n_mbon).zfill(2))
 elif net_type == '12':
@@ -148,8 +148,8 @@ elif net_type == '12':
     ltp = True
     n_ep = 5000
     n_hop = 1
-    n_mbon = 10
-    net_fname = 'min_2nd_order_only'
+    n_mbon = 8
+    net_fname = 'min_2nd_order'
     net_ftype = '2nd_order_1hop_min_mbon/{}_mbons/'.format(str(n_mbon).zfill(2))
 elif net_type == '13':
     # Minimal network CS2 trained (no recurrence, one-hop)
@@ -157,7 +157,7 @@ elif net_type == '13':
     ltp = True
     n_ep = 5000
     n_hop = 1
-    n_mbon = 10
+    n_mbon = 8
     net_fname = 'min_2nd_order_only'
     net_ftype = '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/'\
         .format(str(n_mbon).zfill(2))

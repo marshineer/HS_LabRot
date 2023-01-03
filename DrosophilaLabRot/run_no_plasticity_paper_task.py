@@ -66,11 +66,12 @@ else:
 
 # Plot and save trials for the network
 plot_list = ['CS+', 'CS-']
-plot_lbls = [['CS+'], ['CS+', 'CS-']]
+plot_lbls = [['CS+'], ['CS+', 'Novel']]
 plot_fsuff = ['csp', 'csm']
 for i in range(len(plot_list)):
     network.run_eval(no_plasticity_trial, task=plot_list[i], pos_vt=True)
-    plt_ttl = 'No Plasticity ({} Trial)'.format(plot_list[i])
+    # plt_ttl = 'No Plasticity ({} Trial)'.format(plot_list[i])
+    plt_ttl = '{} Odours'.format(n_odor)
     plt_lbl = (plot_lbls[i], ['US'])
 
     # Plot the trial

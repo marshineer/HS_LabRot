@@ -55,7 +55,7 @@ def plot_trial(network, plt_ttl, plt_lbl, plt_mbons=8, **kwargs):
     #     ax1.plot(plot_time, US_list[i].squeeze(), label='{}'.format(US_lbls[i]))
     ax1.set_ylabel('Valence', fontsize=label_font)
     ax1.set_yticks([])
-    # ax1.set_title(plt_ttl, fontsize=title_font)
+    ax1.set_title(plt_ttl, fontsize=title_font)
     if type(network).__name__ != 'ContinualRNN':
         ax1.set_ylim(-0.1, 1.1)
 
@@ -63,12 +63,7 @@ def plot_trial(network, plt_ttl, plt_lbl, plt_mbons=8, **kwargs):
     plot_neurs = np.random.choice(network.n_mbon, size=plt_mbons, replace=False)
     if type(network).__name__ == 'ContinualRNN':
         r_max = np.max(rt[-network.n_dan:, :])
-        # print(rt[-network.n_dan:, :].shape)
-        # print('r_max all DANs', r_max)
         for i, n in enumerate(plot_neurs):
-            # print(n)
-            # print('r_max current DAN', np.max(rt[-(n + 1), :]))
-            # print('r_max normalized', np.max(rt[-(n + 1), :] / r_max))
             ax2.plot(plot_time, (rt[-(n + 1), :] / r_max) + i, '-k')
         ax2.set_ylabel('Normalized DAN Activity', fontsize=label_font)
         print('')

@@ -42,9 +42,9 @@ max_val = -10
 
 ct = 0
 for i in range(n_nets):
-    # Skip the outlier
-    if i == 4:
-        ct += 1
+    # # Skip the outlier
+    # if i == 4:
+    #     ct += 1
 
     # Trained nets
     net_fname = 'second_order_no_extinct_5000ep_1hop_N{}.pt'\
@@ -65,7 +65,7 @@ for i in range(n_nets):
     # Calculate the max and min values of the weights
     min_val = min(min_val, np.min(W_mbon_to_dan))
     max_val = max(max_val, np.max(W_mbon_to_dan))
-    trained_wts[:, :, i] = W_mbon_to_dan
+    trained_wts[:, :, i] = W_mbon_to_dan.squeeze()
     trained_std_wts[i // sq_dim, i % sq_dim] = np.std(W_mbon_to_dan)
     # avg_wts[i // sq_dim, i % sq_dim] = np.mean(W_mbon_to_dan)
     trained_avg_wts[i // sq_dim, i % sq_dim] = np.mean(abs(W_mbon_to_dan))
@@ -97,7 +97,7 @@ for i in range(n_nets):
     control_avg_wts[i // sq_dim, i % sq_dim] = np.mean(abs(W_mbon_to_dan))
     control_max_wts[i // sq_dim, i % sq_dim] = np.max(abs(W_mbon_to_dan))
 
-    ct += 1
+    # ct += 1
 
 ################## PLOT THE MBON->DAN WEIGHTS AS MATRICES ##################
 ct = 0
@@ -114,7 +114,7 @@ for i in range(n_nets):
     # fig.colorbar(curr_plot, ax=axes[i // sq_dim, i % sq_dim])
 fig.colorbar(curr_plot, ax=axes)
 fig.suptitle('MBON -> DAN Weights', y=0.90)
-# plt.close()
+plt.close()
 
 ###### PLOT THE MBON->DAN WEIGHT AVERAGE AND STD DEV ACROSS ALL NETWORKS ######
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
@@ -122,7 +122,7 @@ avg_plot = ax1.matshow(np.mean(trained_wts, axis=-1), cmap='coolwarm')
 std_plot = ax2.matshow(np.std(trained_wts, axis=-1), cmap='Reds')
 fig.colorbar(avg_plot, ax=ax1)
 fig.colorbar(std_plot, ax=ax2)
-plt.close()
+# plt.close()
 
 ###### PLOT THE AVG ERROR FOR EACH NETWORK, AND COMPARE THAT TO THE
 ###### MBON->DAN WEIGHT VAR, AVG, ABS AVG AND MAX MAGNITUDE
@@ -159,7 +159,7 @@ max_wts_plot = axes[1, 3].matshow(control_max_wts, cmap='Reds', vmin=0)
 axes[1, 3].set_title('Max Weight Magnitude')
 fig.colorbar(max_wts_plot, ax=axes[1, 3])
 
-# plt.close()
+plt.close()
 
 
 
@@ -220,7 +220,7 @@ cbar = fig.colorbar(trained_plot, ax=ax)
 cbar.set_label('Correlation', fontsize=label_font)
 fig.tight_layout()
 fig.suptitle('Trained Network', fontsize=title_font, y=1.05)
-# plt.close()
+plt.close()
 
 # Control nets
 control_mat = np.corrcoef(control_stats)
@@ -252,6 +252,6 @@ plt.close()
 # cbar.set_label('Correlation', fontsize=label_font)
 # fig.tight_layout()
 # fig.suptitle('Control Network', fontsize=title_font, y=1.05)
-plt.close()
+# plt.close()
 
 plt.show()

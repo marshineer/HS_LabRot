@@ -208,7 +208,7 @@ ax2.set_yticks([0, 4.5, 9, 13.5])
 ax2.set_yticklabels(['Avg MBON', 'MBONs', 'Avg DAN', 'DANs'], rotation='vertical',
                     verticalalignment='center')
 fig.tight_layout()
-plt.close()
+# plt.close()
 # plt.show()
 
 # For each of the 20 networks
@@ -269,7 +269,7 @@ for i in range(n_stats):
     axes[i].set_title(mbon_ttls[i], fontsize=label_font)
     fig.colorbar(plot_ax, ax=axes[i])
 axes[0].set_ylabel('Network', fontsize=label_font)
-plt.close()
+# plt.close()
 
 # Calculate the correlations
 flat1 = avg_mbon_dan_wt.flatten()
@@ -288,7 +288,7 @@ ax.set_xticklabels(corr_ttls)
 ax.set_yticks(np.arange(len(corr_ttls)))
 ax.set_yticklabels(corr_ttls, rotation='vertical')
 fig.colorbar(plot_ax, ax=ax)
-plt.close()
+# plt.close()
 
 # Plot the KC->MBON weights (all_kc_mbon_Wt)
 # print(all_kc_mbon_Wt.shape)
@@ -310,7 +310,7 @@ fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 6))
 ax1.matshow(avg_mbon_dan_wt, cmap='coolwarm')
 ax2.matshow(avg_kc_mbon_Wt[:, :, 1], cmap='coolwarm')
 ax3.matshow(avg_kc_mbon_Wt_diff[:, :, 0], cmap='coolwarm')
-plt.close()
+# plt.close()
 
 wt_shp = avg_kc_mbon_Wt.shape
 corr_data = np.zeros((wt_shp[2], wt_shp[0] * wt_shp[1]))

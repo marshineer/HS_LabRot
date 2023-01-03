@@ -174,12 +174,17 @@ class FirstOrderCondRNN(nn.Module):
             W_readout[:, n] = 0
         if act_dan is None:
             act_dan = []
+            act_dan_inds = []
+        else:
+            act_dan_inds = np.argwhere(r_kc[0, :, :] == 1)[1, :4]
 
         # Initialize the KC->MBON weights
         W_kc_mbon = [W0[0]]
         wt = [W0[1]]
 
         # Update activity for each time step
+        # print(np.argwhere(r_kc[0, :, :] == 1))
+        # print(np.argwhere(r_kc[0, :, :] == 1)[1, :4])
         for t in range(time.shape[0] - 1):
             # Define the input to the output circuitry
             I_tot = torch.zeros((n_batch, self.n_recur))
@@ -206,11 +211,13 @@ class FirstOrderCondRNN(nn.Module):
                                         + I_tot)) / self.tau_r
             r_new = r_recur[-1] + dr * dt
             # Artificially activate DANs
-            for n in act_dan:
-                # r_max = torch.max(r_new)
-                # r_new[:, :] = 0  # TODO: set all other DANs to zero?
-                r_new[:, (n - self.n_dan)] = 0.2
-                # r_new[:, (n - self.n_dan)] = 2 * r_max
+            if t in act_dan_inds:
+                for n in act_dan:
+                    # r_max = torch.max(r_new)
+                    # r_new[:, :] = 0  # TODO: set all other DANs to zero?
+                    # print(r_new.shape)
+                    r_new[:, (n - self.n_dan)] = 0.5
+                    # r_new[:, (n - self.n_dan)] = 2 * r_max
             r_recur.append(r_new)
 
             # Update KC->MBON plasticity variables

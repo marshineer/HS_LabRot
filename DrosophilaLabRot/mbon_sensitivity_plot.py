@@ -26,11 +26,16 @@ if inc_type == 'exp':
     n_vals = 5
     mbon_list = (np.ones(n_vals) * n_mbon_0) ** (np.arange(n_vals) + 1)
 elif inc_type == 'lin':
-    n_mbon_0 = 4
+    n_mbon_0 = 6
     n_vals = 7
-    mbon_list = np.arange(n_vals) + n_mbon_0
+    mbon_list = np.append(np.arange(n_vals) + n_mbon_0, 16)
+    # mbon_list = np.append(np.arange(n_vals) + n_mbon_0, (16, 32))
+    print(mbon_list)
+    # print(np.append(mbon_list, 16))
+    # print(np.concatenate(mbon_list, np.array(16)))
 
 # Initialize values
+n_vals = mbon_list.size
 err_avg = np.zeros(n_vals)
 err_std = np.zeros(n_vals)
 mbon_vec = np.zeros(n_vals)
@@ -80,13 +85,14 @@ fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 # ax.boxplot(err_list)
 # ax.set_xticks(np.arange(n_points) + 1)
 # ax.set_xticklabels(mbon_vec)
-ax.boxplot(err_list, labels=mbon_vec)
+ax.boxplot(err_list, labels=mbon_vec, showfliers=False)
 ax.set_xlabel('Number of MBONs', fontsize=label_font)
-ax.set_ylabel('Average Loss', fontsize=label_font)
-ax.set_title('MBON Sensitivity ({})'.format(plt_ttl), fontsize=title_font)
+ax.set_ylabel('Average Readout MSE', fontsize=label_font)
+# ax.set_title('MBON Sensitivity ({})'.format(plt_ttl), fontsize=title_font)
+fig.tight_layout()
 
 # Save the losses plot
-save_plot = True
+save_plot = False
 if save_plot:
     plot_path = net_path + csv_path + plt_name + '_{}.png'.format(inc_type)
     plt.savefig(plot_path, bbox_inches='tight')

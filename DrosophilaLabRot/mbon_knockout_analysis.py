@@ -5,7 +5,7 @@ from common.common import *
 from common.plotting import *
 
 
-def imprint_false(net, W_in, T_vars, n_batch, n_act_dan, **kwargs):
+def imprint_false(net, W_in, T_vars, n_batch, n_act_dan, mbon_inds, **kwargs):
     """ Imprints a false memory on the network, then tests the effects.
 
     A false memory is imprinted by artificially activating (using "act_dan"
@@ -24,6 +24,7 @@ def imprint_false(net, W_in, T_vars, n_batch, n_act_dan, **kwargs):
             T_vars[2] = dt = time step of simulations
         n_batch = number of trials in mini-batch
         n_act_dan = index of DAN to be artificially activated
+        mbon_inds = sorted MBON indices (for knocking out MBONs in sequence)
 
     Returns
         rts_trial = recurrent neuron activities for the trial
@@ -87,7 +88,8 @@ def imprint_false(net, W_in, T_vars, n_batch, n_act_dan, **kwargs):
             r_in = (r_kc_novel, r_ext_zeros)
         # Test novel stimulus while knocking out each MBON individually
         if i > 2:
-            ko_wts = [i - 3]
+            # ko_wts = [i - 3]
+            ko_wts = [mbon_inds[i - 3]]
 
         # Calculate the CS stimulus presentation times
         st_times, st_len = gen_int_times(n_batch, dt, T_stim, T_range, **kwargs)
@@ -143,7 +145,7 @@ def imprint_false(net, W_in, T_vars, n_batch, n_act_dan, **kwargs):
         trial_odors, stim_list
 
 
-def consolidate_false(net, W_in, T_vars, n_batch, n_cons, **kwargs):
+def consolidate_false(net, W_in, T_vars, n_batch, n_cons, mbon_inds, **kwargs):
     """ Imprints a false memory on the network, then tests the effects.
 
     A false memory is imprinted by artificially activating (using "act_dan"
@@ -162,6 +164,7 @@ def consolidate_false(net, W_in, T_vars, n_batch, n_cons, **kwargs):
             T_vars[2] = dt = time step of simulations
         n_batch = number of trials in mini-batch
         n_cons = number of consolidation intervals
+        mbon_inds = sorted MBON indices (for knocking out MBONs in sequence)
 
     Returns
         rts_trial = recurrent neuron activities for the trial
@@ -222,7 +225,8 @@ def consolidate_false(net, W_in, T_vars, n_batch, n_cons, **kwargs):
             ud_wts = False
         # Test novel stimulus while knocking out each MBON individually
         if i > n_cons:
-            ko_wts = [i - (n_cons + 1)]
+            # ko_wts = [i - (n_cons + 1)]
+            ko_wts = [mbon_inds[i - (n_cons + 1)]]
 
         # Calculate the CS stimulus presentation times
         st_times, st_len = gen_int_times(n_batch, dt, T_stim, T_range, **kwargs)
@@ -285,17 +289,29 @@ title_font = 24
 legend_font = 12
 
 # Network parameters
-n_mbon = 8
+n_mbon = 10
 n_hop = 1
+rt_opt = 'r05'
+net_str = '11'
+save_plot = True
 
 # Define the path for saving the trained networks and loss plots
 dir_path = os.path.dirname(__file__)
-net_path = dir_path + '/data_store/mbon_sensitivity/second_order_only_nets/' \
-                      'trained_nets/{}_mbons/'.format(str(n_mbon).zfill(2))
+# net_path = dir_path + '/data_store/network_compare/2nd_order_min_mbon/' \
+#                       '{}_mbons/trained_nets/'.format(str(n_mbon).zfill(2))
+# net_path = dir_path + '/data_store/network_compare/2nd_order_1hop_min_mbon/' \
+#                       '{}_mbons/trained_nets/'.format(str(n_mbon).zfill(2))
+net_path = dir_path + '/data_store/network_compare/' \
+                      '2nd_order_no_extinction_1hop_min_mbon/{}_mbons/' \
+                      'trained_nets/'.format(str(n_mbon).zfill(2))
 
 # Load the minimum network
 network = ExtendedCondRNN(n_mbon=n_mbon, n_hop=n_hop)
-net_fname = 'second_order_no_extinct_5000ep_1hop_N01.pt'
+# net_fname = 'min_2nd_order_5000ep_3hop_N01.pt'
+# Good nets = 2, 6, 9, 13, 15, 18
+# net_fname = 'min_2nd_order_5000ep_1hop_N15.pt'
+# Good nets = 4, 5, 6, 9, 10, 11, 12, 16, 19, 20
+net_fname = 'min_2nd_order_only_5000ep_1hop_N{}.pt'.format(net_str)
 fname = net_path + net_fname
 network.load_state_dict(torch.load(fname))
 
@@ -319,7 +335,8 @@ averse_mbon = sorted_mbons[-1]
 # TODO: why does the positive readout weight create an aversive memory?
 
 # Imprint a false memory in the network, record from DANs
-network.run_eval(imprint_false, n_act_dan=averse_mbon, pos_vt=False)
+network.run_eval(imprint_false, n_act_dan=averse_mbon, mbon_inds=sorted_mbons,
+                 pos_vt=False)
 
 # Identify which DAN was most active during de-activations
 # Length of trial in indices
@@ -334,9 +351,8 @@ US_list_imp = network.eval_US_stim[-1]
 
 # Plot the memory imprinting trial
 plot_time = np.arange(US_list_imp[0].numpy().squeeze().size) * network.dt
-plt_ttl = 'Trial Intervals: CS+, Test, CS-, Test, CS2, Test'
-CS_lbls = ['CS+', 'CS-']
-US_lbls = ['US']
+CS_lbls = ['CS+', 'Novel']
+# US_lbls = ['US']
 # Plot the conditioning and test
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True,
                                gridspec_kw={'height_ratios': [1, 3]})
@@ -344,11 +360,11 @@ ax1.plot(plot_time, vt_imp, label='Readout')
 ax1.plot(plot_time, vt_opt_imp, label='Target')
 for i in range(len(CS_lbls)):
     ax1.plot(plot_time, CS_list_imp[i].squeeze(), label='{}'.format(CS_lbls[i]))
-for i in range(len(US_lbls)):
-    ax1.plot(plot_time, US_list_imp[i].squeeze(), label='{}'.format(US_lbls[i]))
+# for i in range(len(US_lbls)):
+#     ax1.plot(plot_time, US_list_imp[i].squeeze(), label='{}'.format(US_lbls[i]))
 ax1.set_ylabel('Value', fontsize=label_font)
-ax1.set_title(plt_ttl, fontsize=title_font)
-ax1.legend(fontsize=legend_font)
+ax1.set_title('Imprint Memory Trial', fontsize=title_font)
+ax1.legend(fontsize=legend_font, bbox_to_anchor=(1, 1.05), loc='upper left')
 
 # Plot the activities of a few MBONs
 mbon_max = np.max(rt_imp[:n_mbon, :])
@@ -357,17 +373,22 @@ for i, n in enumerate(sorted_mbons):
     ax2.plot(plot_time, (rt_imp[(n - n_mbon), :] / dan_max) + i, '-k')
 ax2.set_xlabel('Time', fontsize=label_font)
 ax2.set_ylabel('Normalized DAN Activity', fontsize=label_font)
-ax2.set_yticks([1, 7])
+ax2.set_yticks([1, (n_mbon - 1)])
 ax2.set_yticklabels(['Most Negative W_readout', 'Most Positive W_readout'],
                     rotation='vertical', verticalalignment='center')
 fig.tight_layout()
 # plt.close()
+if save_plot:
+    plot_path = dir_path + '/data_store/analysis_plots/mbon_knockout_imprint_' \
+                           'trial_{}_N{}.png'.format(rt_opt, net_str)
+    fig.savefig(plot_path, bbox_inches='tight')
 
 # Consolidate and record from DANs
 W_in = (torch.unsqueeze(network.eval_Wts[-1][:, :, -1], 0),
         torch.unsqueeze(network.eval_wts[-1][:, :, -1], 0))
-n_cons = 3
-network.run_eval(consolidate_false, W_in=W_in, pos_vt=False, n_cons=n_cons)
+n_cons = 4
+network.run_eval(consolidate_false, W_in=W_in, pos_vt=False, n_cons=n_cons,
+                 mbon_inds=sorted_mbons)
 
 # Pull the data
 Wt_kc_mbon_con = network.eval_Wts[-1].numpy().squeeze()
@@ -379,9 +400,8 @@ US_list_con = network.eval_US_stim[-1]
 
 # Plot the consolidation trial
 plot_time = np.arange(US_list_con[0].numpy().squeeze().size) * network.dt
-plt_ttl = 'Trial Intervals: CS+, Test, CS-, Test, CS2, Test'
-CS_lbls = ['CS+', 'CS-']
-US_lbls = ['US']
+CS_lbls = ['CS+', 'Novel']
+# US_lbls = ['US']
 # Plot the conditioning and test
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True,
                                gridspec_kw={'height_ratios': [1, 3]})
@@ -391,11 +411,11 @@ ax1.plot(plot_time, vt_opt_con, label='Target')
 # This is determined by the output of the trial function
 for i in range(len(CS_lbls)):
     ax1.plot(plot_time, CS_list_con[i].squeeze(), label='{}'.format(CS_lbls[i]))
-for i in range(len(US_lbls)):
-    ax1.plot(plot_time, US_list_con[i].squeeze(), label='{}'.format(US_lbls[i]))
+# for i in range(len(US_lbls)):
+#     ax1.plot(plot_time, US_list_con[i].squeeze(), label='{}'.format(US_lbls[i]))
 ax1.set_ylabel('Value', fontsize=label_font)
-ax1.set_title(plt_ttl, fontsize=title_font)
-ax1.legend(fontsize=legend_font)
+ax1.set_title('Consolidate Memory Trial', fontsize=title_font)
+ax1.legend(fontsize=legend_font, bbox_to_anchor=(1, 1.05), loc='upper left')
 
 # Plot the activities of a few MBONs
 mbon_max = np.max(rt_con[:n_mbon, :])
@@ -404,11 +424,15 @@ for i, n in enumerate(sorted_mbons):
     ax2.plot(plot_time, (rt_con[(n - n_mbon), :] / dan_max) + i, '-k')
 ax2.set_xlabel('Time', fontsize=label_font)
 ax2.set_ylabel('Normalized DAN Activity', fontsize=label_font)
-ax2.set_yticks([1, 7])
+ax2.set_yticks([1, (n_mbon - 1)])
 ax2.set_yticklabels(['Most Negative W_readout', 'Most Positive W_readout'],
                     rotation='vertical', verticalalignment='center')
 fig.tight_layout()
 # plt.close()
+if save_plot:
+    plot_path = dir_path + '/data_store/analysis_plots/mbon_knockout_' \
+                           'consolidate_trial_{}_N{}.png'.format(rt_opt, net_str)
+    fig.savefig(plot_path, bbox_inches='tight')
 
 ###############################################################################
 # KC->MBON Weight Changes
@@ -424,13 +448,15 @@ x_labs = ['Imprint Memory']
 fig, axes = plt.subplots(1, n_imp_plots, figsize=(4, 6), sharey=True)
 for i in range(n_imp_plots):
     if n_imp_plots > 1:
-        axes[i].imshow(kc_mbon_imp_diff[:, :, i].T, cmap='coolwarm',
-                       origin='lower', aspect='auto',
-                       vmin=wt_dt_min, vmax=wt_dt_max)
+        imp_wt_plt = axes[i].imshow(kc_mbon_imp_diff[:, :, i].T, cmap='coolwarm',
+                                    origin='lower', aspect='auto',
+                                    vmin=wt_dt_min, vmax=wt_dt_max)
         axes[n_imp_plots // 2].set_xlabel('MBON (Sorted)', fontsize=label_font)
         axes[0].set_ylabel('KC', fontsize=label_font)
-    axes.imshow(kc_mbon_imp_diff[:, :, i].T, cmap='coolwarm', origin='lower',
-                   aspect='auto', vmin=wt_dt_min, vmax=wt_dt_max)
+    else:
+        imp_wt_plt = axes.imshow(kc_mbon_imp_diff[:, :, i].T, cmap='coolwarm',
+                                 origin='lower', aspect='auto',
+                                 vmin=wt_dt_min, vmax=wt_dt_max)
 axes.set_xlabel('MBON (Sorted)', fontsize=label_font)
 # axes.set_xticks([])
 axes.set_xticks(np.arange(n_mbon))
@@ -441,77 +467,120 @@ axes.set_yticks([])
 # axes.set_yticklabels((np.arange(n_kc) + 1)[::25])
 axes.set_title(r'$\Delta W^{KC \rightarrow MBON}$'+' After\nImprinting Memory',
                fontsize=label_font)
+if n_imp_plots > 1:
+    fig.colorbar(imp_wt_plt, ax=axes[-1])
+else:
+    fig.colorbar(imp_wt_plt, ax=axes)
 fig.tight_layout()
+if save_plot:
+    plot_path = dir_path + '/data_store/analysis_plots/mbon_knockout_imprint_' \
+                           'weights_{}_N{}.png'.format(rt_opt, net_str)
+    fig.savefig(plot_path, bbox_inches='tight')
+plt.close()
 
 # Consolidation Trial
 # avg_kc_mbon_con_diff_01 = np.mean(np.diff(Wt_kc_mbon_con[:, :, :2]),
 #                                   axis=1)[sorted_mbons].T
-kc_mbon_con_diff = np.diff(Wt_kc_mbon_con[sorted_mbons, :, :4])
+kc_mbon_con_diff = np.diff(Wt_kc_mbon_con[sorted_mbons, :, :(n_cons + 1)])
 n_con_plots = kc_mbon_con_diff.shape[-1]
 
-fig, axes = plt.subplots(1, n_con_plots, figsize=(6, 6), sharey=True)
+fig, axes = plt.subplots(1, n_con_plots, figsize=(3 * n_con_plots, 6), sharey=True)
 for i in range(n_con_plots):
-    axes[i].imshow(kc_mbon_con_diff[:, :, i].T, cmap='coolwarm', origin='lower',
-              aspect='auto', vmin=wt_dt_min, vmax=wt_dt_max)
+    con_wt_plt = axes[i].imshow(kc_mbon_con_diff[:, :, i].T, cmap='coolwarm',
+                                origin='lower', aspect='auto',
+                                vmin=wt_dt_min, vmax=wt_dt_max)
     axes[i].set_xticks(np.arange(n_mbon))
     axes[i].set_xticklabels(np.arange(n_mbon) + 1)
-axes[n_con_plots // 2].set_xlabel('MBON (Sorted)', fontsize=label_font)
+# axes[n_con_plots // 2].set_xlabel('MBON (Sorted)', fontsize=label_font)
+fig.text(0.5, 0.04, 'MBON (Sorted)', fontsize=label_font, ha='center')
 axes[0].set_yticks([])
 axes[0].set_ylabel('KC', fontsize=label_font)
 fig.suptitle(r'$\Delta W^{KC \rightarrow MBON}$'+' After Consolidation Intervals',
              fontsize=label_font, y=0.93)
+fig.colorbar(con_wt_plt, ax=axes[-1])
 # fig.tight_layout()
+if save_plot:
+    plot_path = dir_path + '/data_store/analysis_plots/mbon_knockout_consoli' \
+                           'date_weights_{}_N{}.png'.format(rt_opt, net_str)
+    fig.savefig(plot_path, bbox_inches='tight')
+plt.close()
 
 ###############################################################################
-# # DAN and MBON Activity
-# # Imprinting Trial
-# rt_dans_imp = rt_imp[-n_mbon:, :]
-# ss_dan_imp = rt_dans_imp[sorted_mbons, (3 * tr_len - 1)::tr_len]
-# rt_mbons_imp = rt_imp[:n_mbon, :]
-# ss_mbon_imp = rt_mbons_imp[sorted_mbons, (3 * tr_len - 1)::tr_len]
+# DAN and MBON Activity
+# x_labels = ['None', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Imprint']
+# x_labels = ['None', 'Most Negative MBON', 'Most Positive MBON']
+x_labels = ['Most Aversive', 'Most Apetitive']
+y_labels = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+
+# Imprinting Trial
+rt_dans_imp = rt_imp[-n_mbon:, :]
+ss_dan_imp = rt_dans_imp[sorted_mbons, (3 * tr_len - 1)::tr_len]
+ss_dan_imp -= ss_dan_imp[:, 0].reshape(-1, 1)
+rt_mbons_imp = rt_imp[:n_mbon, :]
+ss_mbon_imp = rt_mbons_imp[sorted_mbons, (3 * tr_len - 1)::tr_len]
 # fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 # ax.imshow(ss_dan_imp, cmap='coolwarm', origin='lower')
 # ax.imshow(ss_mbon_imp, cmap='coolwarm', origin='lower')
 # ax.set_xlabel('Deactivated MBON (Sorted)', fontsize=label_font)
 # ax.set_xticks(np.arange(ss_dan_imp.shape[-1]))
-# ax.set_xticklabels(['None', '1', '2', '3', '4', '5', '6', '7', '8'])
+# ax.set_xticklabels(x_labels)
 # ax.set_ylabel('DAN Activity (Sorted)', fontsize=label_font)
 # ax.set_yticks(np.arange(ss_dan_imp.shape[0]))
-# ax.set_yticklabels(['1', '2', '3', '4', '5', '6', '7', '8'])
+# ax.set_yticklabels(y_labels)
 # plt.close()
 
-# # Consolidation Trial
-# rt_dans_con = rt_con[-n_mbon:, :]
-# ss_dan_con = rt_dans_con[sorted_mbons, ((n_cons + 1) * tr_len - 1)::tr_len]
-# # MBON Activity
-# rt_mbons_con = rt_con[:n_mbon, :]
-# ss_mbon_con = rt_mbons_con[sorted_mbons, ((n_cons + 1) * tr_len - 1)::tr_len]
+# Consolidation Trial
+rt_dans_con = rt_con[-n_mbon:, :]
+ss_dan_con = rt_dans_con[sorted_mbons, ((n_cons + 1) * tr_len - 1)::tr_len]
+ss_dan_con -= ss_dan_con[:, 0].reshape(-1, 1)
+rt_mbons_con = rt_con[:n_mbon, :]
+ss_mbon_con = rt_mbons_con[sorted_mbons, ((n_cons + 1) * tr_len - 1)::tr_len]
 # fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 # ax.imshow(ss_dan_con, cmap='coolwarm', origin='lower')
 # ax.set_xlabel('Deactivated MBON (Sorted)', fontsize=label_font)
 # ax.set_xticks(np.arange(ss_dan_con.shape[-1]))
-# ax.set_xticklabels(['None', '1', '2', '3', '4', '5', '6', '7', '8'])
+# ax.set_xticklabels(x_labels)
 # ax.set_ylabel('DAN Activity (Sorted)', fontsize=label_font)
 # ax.set_yticks(np.arange(ss_dan_con.shape[0]))
-# ax.set_yticklabels(['1', '2', '3', '4', '5', '6', '7', '8'])
+# ax.set_yticklabels(y_labels)
 # plt.close()
 
-# # Look at changes after consolidation
-# # TODO: take difference of DAN activity matrices
-# ss_diff = ss_dan_imp - ss_dan_con
+# Look at changes after consolidation
+ss_diff = ss_dan_imp - ss_dan_con
+# ss_diff = ss_mbon_imp - ss_mbon_con
 # max_val = max(np.max(ss_diff), abs(np.min(ss_diff)))
-# max_val = 0.3
-# # ss_diff = ss_mbon_imp - ss_mbon_con
-# fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-# dan_diff_plot = ax.imshow(ss_diff, cmap='coolwarm', origin='lower',
-#                           vmin=-max_val, vmax=max_val)
-# ax.set_xlabel('Deactivated MBON (Sorted)', fontsize=label_font)
+max_val = 0.15
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+dan_diff_plot = ax.imshow(ss_diff[:, 1:], cmap='coolwarm', origin='lower',
+                          vmin=-max_val, vmax=max_val)
+ax.set_xlabel('Deactivated MBON (Sorted)', fontsize=label_font)
 # ax.set_xticks(np.arange(ss_diff.shape[-1]))
-# ax.set_xticklabels(['None', '1', '2', '3', '4', '5', '6', '7', '8'])
-# ax.set_ylabel('DAN Activity (Sorted)', fontsize=label_font)
-# ax.set_yticks(np.arange(ss_diff.shape[0]))
-# ax.set_yticklabels(['1', '2', '3', '4', '5', '6', '7', '8'])
-# fig.colorbar(dan_diff_plot, ax=ax)
+ax.set_xticks([0, ss_diff.shape[-1] - 2])
+ax.set_xticklabels(x_labels)
+ax.set_ylabel('DAN Activity (Sorted)', fontsize=label_font)
+ax.set_yticks(np.arange(ss_diff.shape[0]))
+ax.set_yticklabels(y_labels)
+fig.colorbar(dan_diff_plot, ax=ax)
 # plt.close()
+if save_plot:
+    plot_path = dir_path + '/data_store/analysis_plots/mbon_knockout_ss_dan' \
+                           '_diffs_{}_N{}.png'.format(rt_opt, net_str)
+    fig.savefig(plot_path, bbox_inches='tight')
+
+fig, axes = plt.subplots(1, 3, figsize=(24, 6), sharey=True)
+diff_mats = np.stack((ss_dan_imp, ss_dan_con, ss_diff))
+for i in range(3):
+    dan_plot = axes[i].imshow(diff_mats[i], cmap='coolwarm', origin='lower',
+                              vmin=-max_val, vmax=max_val)
+    axes[i].set_xlabel('Deactivated MBON (Sorted)', fontsize=label_font)
+    # axes[i].set_xticks(np.arange(ss_diff.shape[-1]))
+    axes[i].set_xticks([1, ss_diff.shape[-1] - 1])
+    axes[i].set_xticklabels(x_labels)
+fig.colorbar(dan_plot, ax=axes[-1], shrink=0.6)
+axes[0].set_ylabel('DAN Activity (Sorted)', fontsize=label_font)
+axes[0].set_yticks(np.arange(ss_diff.shape[0]))
+axes[0].set_yticklabels(y_labels)
+# fig.tight_layout()
+plt.close()
 
 plt.show()
